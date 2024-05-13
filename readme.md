@@ -1,7 +1,3 @@
-🔒👾 Here's a README file for your Flask-based Counter API, complete with setup instructions, usage guidelines, and examples. This README provides clarity on installation, building, and running your Docker container, as well as how to interact with your API.
-
----
-
 # Counter API
 
 The Counter API is a simple Flask application designed to track counts associated with unique IDs. It provides endpoints to get the total count, increment by one, and increase by a specified value. This document outlines the setup and usage of the Counter API.
