@@ -17,8 +17,5 @@ EXPOSE 5000/tcp
 # Define environment variable to specify the database path
 ENV DATABASE /data/counters.db
 
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-   CMD curl -f http://localhost:5000/ || exit 1
-
 # Run app.py when the container launches
 CMD ["gunicorn", "-w 4", "-b", "0.0.0.0:5000", "app:app"]
