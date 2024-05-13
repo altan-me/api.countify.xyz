@@ -12,7 +12,7 @@ ADD . /app
 RUN pip install --no-cache-dir flask gunicorn
 
 # Make port 5000 available to the world outside this container
-EXPOSE 5000
+EXPOSE 5000/tcp
 
 # Define environment variable to specify the database path
 ENV DATABASE /data/counters.db
