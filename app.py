@@ -1,17 +1,19 @@
+import os
 import sqlite3
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
+
 
 app = Flask(__name__)
-DATABASE = 'counters.db'
+DATABASE = os.getenv('DATABASE', 'counters.db')
 
 def get_db():
-    # Create a database connection each time this is called
+    db_path = DATABASE  # Correctly assigning the DATABASE constant to db_path
     db = sqlite3.connect(DATABASE)
-    db.row_factory = sqlite3.Row  # This enables column access by name: row['column_name']
+    print(f"Connecting to database at {db_path}")  # Debugging output
+    db.row_factory = sqlite3.Row
     return db
 
 def init_db():
-    # Initialize the database and create table if it doesn't exist
     with get_db() as db:
         db.execute('''
             CREATE TABLE IF NOT EXISTS counters (
@@ -64,6 +66,14 @@ def increase_by_value(counter_id):
     db.commit()
     return jsonify(count=new_count)
 
+@app.errorhandler(404)
+def not_found(error):
+    return make_response(jsonify({'error': 'Not found'}), 404)
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return make_response(jsonify({'error': 'Method not allowed'}), 405)
+
 if __name__ == '__main__':
-    init_db()  # Ensure the database and table are ready
-    app.run(debug=True)  # Start the application with debugging enabled
+    init_db()
+    app.run(debug=True, host='0.0.0.0')
