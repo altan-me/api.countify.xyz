@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 Flask-Limiter
 psycopg2-binary
 gunicorn
+redis
