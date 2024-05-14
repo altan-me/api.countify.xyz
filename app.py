@@ -1,82 +1,73 @@
 import os
-import sqlite3
 from datetime import datetime
 from flask import Flask, jsonify, request, make_response
+from flask_sqlalchemy import SQLAlchemy
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from sqlalchemy.orm import Session
 
+# Initialize the database and rate limiter globally
+db = SQLAlchemy()
+limiter = Limiter(key_func=get_remote_address)
 
-app = Flask(__name__)
-DATABASE = os.getenv('DATABASE', 'counters.db')
-
-def get_db():
-    db_path = DATABASE  # Correctly assigning the DATABASE constant to db_path
-    db = sqlite3.connect(DATABASE)
-    print(f"Connecting to database at {db_path}")  # Debugging output
-    db.row_factory = sqlite3.Row
-    return db
-
-def init_db():
-    try:
-        with get_db() as db:
-            db.execute('''
-                CREATE TABLE IF NOT EXISTS counters (
-                    id TEXT PRIMARY KEY,
-                    count INTEGER NOT NULL DEFAULT 0,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            db.commit()
-    except Exception as e:
-        print(f"Error initializing the database: {e}")
+class Counter(db.Model):
+    id = db.Column(db.String, primary_key=True)
+    count = db.Column(db.Integer, default=0)
+    last_updated = db.Column(db.DateTime, default=datetime.now)
 
 def create_app():
     app = Flask(__name__)
-    
-    # Database initialization
-    init_db()
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///counters.db')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Initialize the extensions with the app
+    db.init_app(app)
+    limiter.init_app(app)
+
+    with app.app_context():
+        db.create_all()
 
     @app.route('/get-total/<counter_id>', methods=['GET'])
+    @limiter.limit("10 per minute")
     def get_total(counter_id):
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('SELECT count, last_updated FROM counters WHERE id = ?', (counter_id,))
-        row = cursor.fetchone()
-        if row:
-            return jsonify(id=counter_id, count=row['count'], last_updated=row['last_updated'])
-        else:
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, 0)', (counter_id,))
-            db.commit()
-            return jsonify(id=counter_id, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
+        with Session(db.engine) as session:
+            counter = session.get(Counter, counter_id)
+            if counter:
+                return jsonify(id=counter_id, count=counter.count, last_updated=counter.last_updated.isoformat() + 'Z')
+            else:
+                new_counter = Counter(id=counter_id, count=0)
+                session.add(new_counter)
+                session.commit()
+                return jsonify(id=counter_id, count=0, last_updated=datetime.now().isoformat() + 'Z')
 
     @app.route('/increment/<counter_id>', methods=['POST'])
+    @limiter.limit("10 per minute")
     def increment_by_one(counter_id):
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('SELECT count FROM counters WHERE id = ?', (counter_id,))
-        row = cursor.fetchone()
-        if row:
-            new_count = row['count'] + 1
-            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_count, counter_id))
-        else:
-            new_count = 1
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, ?)', (counter_id, new_count))
-        db.commit()
-        return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        with Session(db.engine) as session:
+            counter = session.get(Counter, counter_id)
+            if counter:
+                counter.count += 1
+                counter.last_updated = datetime.now()
+            else:
+                counter = Counter(id=counter_id, count=1)
+                session.add(counter)
+            session.commit()
+            return jsonify(id=counter_id, count=counter.count, last_updated=counter.last_updated.isoformat() + 'Z')
 
     @app.route('/increase/<counter_id>', methods=['POST'])
+    @limiter.limit("10 per minute")
     def increase_by_value(counter_id):
         value = int(request.json['value'])
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('SELECT count FROM counters WHERE id = ?', (counter_id,))
-        row = cursor.fetchone()
-        if row:
-            new_count = row['count'] + value
-            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_count, counter_id))
-        else:
-            new_count = value
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, ?)', (counter_id, new_count))
-        db.commit()
-        return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        with Session(db.engine) as session:
+            counter = session.get(Counter, counter_id)
+            if counter:
+                counter.count += value
+                counter.last_updated = datetime.now()
+            else:
+                counter = Counter(id=counter_id, count=value)
+                session.add(counter)
+            session.commit()
+            return jsonify(id=counter_id, count=counter.count, last_updated=counter.last_updated.isoformat() + 'Z')
 
     @app.errorhandler(404)
     def not_found(error):
@@ -91,5 +82,4 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    init_db()
     app.run(debug=True, host='0.0.0.0')
