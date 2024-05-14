@@ -6,14 +6,6 @@ The Counter API is a simple Flask application designed to track counts associate
 
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
 
-### Prerequisites
-
-You need Python and Docker installed on your system. You can install Flask using pip:
-
-```bash
-pip install flask
-```
-
 ### Installing
 
 Clone the repository to your local machine and navigate to the directory containing the Dockerfile.
@@ -23,7 +15,7 @@ Clone the repository to your local machine and navigate to the directory contain
 Build the Docker container for the Counter API using the following command:
 
 ```bash
-docker build -t counter-api .
+docker-compose build
 ```
 
 ### Running the Application
@@ -31,10 +23,8 @@ docker build -t counter-api .
 Run the application using Docker with the following command:
 
 ```bash
-docker run -d -p 5000:5000 -v $(pwd)/data:/data counter-api
+docker-compose up
 ```
-
-This command will start the Counter API in a detached mode, map port 5000 of the container to port 5000 on your host, and mount the `./data` directory on the host to `/data` in the container for persistent storage.
 
 ## API Usage
 
