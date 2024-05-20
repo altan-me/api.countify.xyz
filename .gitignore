@@ -2,3 +2,6 @@
 __pycache__/
 counters.db
 instance
+supervisord.pid
+supervisord.log
+dump.rdb

@@ -13,11 +13,17 @@ COPY requirements.txt /app/
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Make port 5000 available to the world outside this container
+# Install Redis and Supervisor
+RUN apk add --no-cache redis supervisor
+
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisord.conf
+
+# Make ports available to the world outside this container
 EXPOSE 5000/tcp
 
 # Copy the application
 COPY . /app/
 
-# Run the application
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+# Run Supervisor to manage both Redis and the application
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]

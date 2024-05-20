@@ -13,7 +13,7 @@ import re
 db = SQLAlchemy()
 
 # Configure Redis for Flask-Limiter
-redis_url = os.getenv('REDIS_URL')
+redis_url = "redis://localhost:6379/0"
 redis_connection = redis.StrictRedis.from_url(redis_url)
 limiter = Limiter(key_func=get_remote_address, storage_uri=redis_url)
 

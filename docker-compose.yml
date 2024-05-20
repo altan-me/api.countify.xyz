@@ -1,17 +1,15 @@
 services:
   web:
     build: .
-    command: gunicorn -w 4 -b 0.0.0.0:5000 app:app
+    command: supervisord -c /etc/supervisord.conf
     volumes:
       - .:/app
     ports:
       - "5000:5000"
     depends_on:
       - db
-      - redis
     environment:
       DATABASE_URL: postgresql://username:password@db:5432/mydatabase
-      REDIS_URL: redis://redis:6379/0
 
   db:
     image: postgres:latest
@@ -21,10 +19,6 @@ services:
       POSTGRES_DB: mydatabase
       POSTGRES_USER: username
       POSTGRES_PASSWORD: password
-
-  redis:
-    image: redis:latest
-    # Do not expose Redis port to the host machine
 
 volumes:
   postgres_data:
