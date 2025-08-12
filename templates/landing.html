@@ -11,7 +11,6 @@
       <div class="container nav-inner">
         <a class="brand" href="/">🔢 Countify</a>
         <div class="nav-links">
-          <a href="/" class="{{ 'active' if request.path == '/' else '' }}">🏠 Landing</a>
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
           <div class="user-menu" x-data>
