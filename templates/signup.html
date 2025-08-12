@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Countify - Login</title>
+    <title>Countify - Sign up</title>
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
@@ -17,27 +17,26 @@
             <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
             <div class="user-dropdown" id="userDropdown">
               <div class="section">
-                <div><strong>{{ g.user.username }}</strong></div>
+                <div><strong>👤 {{ g.user.username }}</strong></div>
                 <div class="muted">Signed in</div>
               </div>
               <div class="section">
                 <form method="post" action="/logout" onsubmit="return confirmLogout()">
                   <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
-                  <button type="submit" class="btn danger" style="width:100%">Log out</button>
+                  <button type="submit" class="btn danger" style="width:100%">🚪 Log out</button>
                 </form>
               </div>
             </div>
           </div>
           {% else %}
           <a href="/login" class="{{ 'active' if request.path.startswith('/login') else '' }}">🔐 Login</a>
-          <a href="/signup" class="{{ 'active' if request.path.startswith('/signup') else '' }}">🆕 Sign up</a>
           {% endif %}
         </div>
       </div>
     </nav>
 
     <main class="container" style="padding-top: 40px;">
-      <h1>🔐 Login</h1>
+      <h1>🆕 Sign up</h1>
       {% if error %}
       <div class="alert">{{ error }}</div>
       {% endif %}
@@ -45,22 +44,24 @@
         <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
         <div class="form-row">
           <label for="username">Username</label>
-          <input id="username" name="username" type="text" required />
+          <input id="username" name="username" type="text" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]+" required />
         </div>
         <div class="form-row">
           <label for="password">Password</label>
-          <input id="password" name="password" type="password" required />
+          <input id="password" name="password" type="password" minlength="8" required />
         </div>
-        <button type="submit" class="btn">Sign in</button>
+        <div class="form-row">
+          <label for="confirm">Confirm Password</label>
+          <input id="confirm" name="confirm" type="password" minlength="8" required />
+        </div>
+        <button type="submit" class="btn">Create account</button>
       </form>
-      <p class="muted" style="margin-top: 12px;">
-        Default user is <code>admin</code>. Set password via <code>ADMIN_PASSWORD</code> or check console for temp password on first run.
-      </p>
     </main>
 
     <footer class="container muted">
       <small>Powered by Countify</small>
     </footer>
+
     <script>
       function toggleUserMenu(e){
         e.preventDefault();

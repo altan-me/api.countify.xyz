@@ -25,7 +25,8 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS counters (
                     id TEXT PRIMARY KEY,
                     count INTEGER NOT NULL DEFAULT 0,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    owner TEXT
                 )
             ''')
             db.execute('''
@@ -43,6 +44,16 @@ def init_db():
                     locked_until TIMESTAMP
                 )
             ''')
+            # Lightweight migration: add owner column if missing in existing DBs
+            try:
+                cur = db.cursor()
+                cur.execute("PRAGMA table_info(counters)")
+                cols = {row[1] for row in cur.fetchall()}  # name is at index 1
+                if 'owner' not in cols:
+                    cur.execute('ALTER TABLE counters ADD COLUMN owner TEXT')
+            except Exception as _e:
+                # Non-fatal; continue without interrupting app startup
+                pass
             db.commit()
     except Exception as e:
         print(f"Error initializing the database: {e}")
@@ -221,24 +232,36 @@ def create_app():
         db = get_db()
         cursor = db.cursor()
 
-        cursor.execute('SELECT COUNT(*) AS total_counters FROM counters')
+        # If a user is logged in, limit stats to their counters
+        owner = session.get('user_id')
+        params = ()
+        where_owner = ''
+        if owner:
+            where_owner = 'WHERE owner = ?'
+            params = (owner,)
+
+        cursor.execute(f'SELECT COUNT(*) AS total_counters FROM counters {where_owner}', params)
         total_counters_row = cursor.fetchone()
         total_counters = total_counters_row['total_counters'] if total_counters_row else 0
 
-        cursor.execute('SELECT COALESCE(SUM(count), 0) AS total_count FROM counters')
+        cursor.execute(f'SELECT COALESCE(SUM(count), 0) AS total_count FROM counters {where_owner}', params)
         total_count_row = cursor.fetchone()
         total_count = total_count_row['total_count'] if total_count_row else 0
 
-        cursor.execute('SELECT MAX(last_updated) AS last_activity FROM counters')
+        cursor.execute(f'SELECT MAX(last_updated) AS last_activity FROM counters {where_owner}', params)
         last_activity_row = cursor.fetchone()
         last_activity = last_activity_row['last_activity'] if last_activity_row else None
 
-        cursor.execute('''
+        cursor.execute(
+            f'''
             SELECT id, count, last_updated
             FROM counters
+            {where_owner}
             ORDER BY count DESC
             LIMIT 10
-        ''')
+            ''',
+            params,
+        )
         top_counters_rows = cursor.fetchall() or []
         top_counters = [
             {
@@ -249,12 +272,16 @@ def create_app():
             for row in top_counters_rows
         ]
 
-        cursor.execute('''
+        cursor.execute(
+            f'''
             SELECT id, count, last_updated
             FROM counters
+            {where_owner}
             ORDER BY last_updated DESC
             LIMIT 10
-        ''')
+            ''',
+            params,
+        )
         recent_rows = cursor.fetchall() or []
         recently_updated = [
             {
@@ -308,9 +335,9 @@ def create_app():
         cursor = db.cursor()
         try:
             if initial_count == 0:
-                cursor.execute('INSERT INTO counters (id, count) VALUES (?, 0)', (counter_id,))
+                cursor.execute('INSERT INTO counters (id, count, owner) VALUES (?, 0, ?)', (counter_id, session.get('user_id')))
             else:
-                cursor.execute('INSERT INTO counters (id, count) VALUES (?, ?)', (counter_id, initial_count))
+                cursor.execute('INSERT INTO counters (id, count, owner) VALUES (?, ?, ?)', (counter_id, initial_count, session.get('user_id')))
             db.commit()
         except sqlite3.IntegrityError:
             return make_response(jsonify({'error': 'Counter already exists'}), 409)
@@ -369,6 +396,52 @@ def create_app():
             return make_response('Bad CSRF token', 400)
         session.clear()
         return redirect(url_for('landing'))
+
+    @app.route('/signup', methods=['GET', 'POST'])
+    def signup():
+        if request.method == 'GET':
+            get_or_create_csrf_token()
+            return render_template('signup.html')
+
+        csrf_token = request.form.get('csrf_token', '')
+        if not validate_csrf_token(csrf_token):
+            return make_response(render_template('signup.html', error='Invalid session. Please try again.'), 400)
+
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        confirm = request.form.get('confirm') or ''
+
+        # Basic validation
+        if not username or not password or not confirm:
+            return make_response(render_template('signup.html', error='All fields are required.'), 400)
+        if password != confirm:
+            return make_response(render_template('signup.html', error='Passwords do not match.'), 400)
+        if len(username) < 3 or len(username) > 32 or not re.fullmatch(r'[A-Za-z0-9_-]+', username):
+            return make_response(render_template('signup.html', error='Username must be 3-32 chars of letters, numbers, _ or -'), 400)
+        if len(password) < 8:
+            return make_response(render_template('signup.html', error='Password must be at least 8 characters.'), 400)
+
+        # Basic rate limit per IP for signups using existing attempts table
+        db = get_db()
+        key = f"signup|{get_client_ip()}"
+        locked, _ = is_locked(db, key)
+        if locked:
+            return make_response(render_template('signup.html', error='Too many attempts. Try again later.'), 429)
+
+        try:
+            with db:
+                db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, generate_password_hash(password)))
+        except sqlite3.IntegrityError:
+            # Register a failure against the IP and return conflict
+            register_failure(db, key)
+            return make_response(render_template('signup.html', error='Username is taken.'), 409)
+
+        # Clear failures on success and log the user in
+        clear_attempts(db, key)
+        session['user_id'] = username
+        session['csrf_token'] = secrets.token_urlsafe(16)
+        session.permanent = True
+        return redirect(url_for('dashboard'))
 
     @app.route('/increase/<counter_id>', methods=['POST'])
     def increase_by_value(counter_id):
