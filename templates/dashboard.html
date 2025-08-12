@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Countify Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="container nav-inner">
+        <a class="brand" href="/">🔢 Countify</a>
+        <div class="nav-links">
+          <a href="/" class="{{ 'active' if request.path == '/' else '' }}">🏠 Landing</a>
+          <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
+          {% if g.user %}
+          <div class="user-menu">
+            <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
+            <div class="user-dropdown" id="userDropdown">
+              <div class="section">
+                <div><strong>👤 {{ g.user.username }}</strong></div>
+                <div class="muted">Signed in</div>
+              </div>
+              <div class="section">
+                <form method="post" action="/logout" onsubmit="return confirmLogout()">
+                  <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
+                  <button type="submit" class="btn danger" style="width:100%">🚪 Log out</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <a href="/login" class="{{ 'active' if request.path.startswith('/login') else '' }}">🔐 Login</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+    <header class="container">
+      <h1>📊 Dashboard</h1>
+      <p class="muted">Realtime overview of counters</p>
+    </header>
+
+    <main class="container">
+      <section class="cards">
+        <div class="card">
+          <div class="label">🔢 Total Counters</div>
+          <div id="totalCounters" class="value">-</div>
+        </div>
+        <div class="card">
+          <div class="label">➕ Total Count</div>
+          <div id="totalCount" class="value">-</div>
+        </div>
+        <div class="card">
+          <div class="label">🕒 Last Activity</div>
+          <div id="lastActivity" class="value small">-</div>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>🏆 Top Counters</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="topCountersChart"></canvas>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h2>⏱️ Recently Updated</h2>
+          </div>
+          <table class="table" id="recentTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Count</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 20px;">
+        <div class="panel-header">
+          <h2>➕ Create Counter</h2>
+        </div>
+        <div class="container" style="padding-top: 0; padding-bottom: 16px;">
+          <form id="createForm" class="form" onsubmit="return handleCreate(event)">
+            <input type="hidden" id="csrfToken" value="{{ session['csrf_token'] }}" />
+            <div class="form-row">
+              <label for="newId">Counter ID</label>
+              <input id="newId" name="id" type="text" placeholder="my-counter" required />
+            </div>
+            <div class="form-row">
+              <label for="initialCount">Initial Count (optional)</label>
+              <input id="initialCount" name="initial_count" type="number" min="0" placeholder="0" />
+            </div>
+            <button type="submit" class="btn">Create</button>
+            <span id="createMsg" class="muted" style="margin-left: 10px;"></span>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="container muted">
+      <small>Powered by Countify</small>
+    </footer>
+
+    <script>
+      const totalCountersEl = document.getElementById('totalCounters');
+      const totalCountEl = document.getElementById('totalCount');
+      const lastActivityEl = document.getElementById('lastActivity');
+      const recentTableBody = document.querySelector('#recentTable tbody');
+
+      let topChart;
+
+      async function fetchStats() {
+        try {
+          const res = await fetch('/stats');
+          if (!res.ok) throw new Error('Failed to fetch stats');
+          const data = await res.json();
+          renderStats(data);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      async function handleCreate(e) {
+        e.preventDefault();
+        const id = document.getElementById('newId').value.trim();
+        const initial = document.getElementById('initialCount').value;
+        const token = document.getElementById('csrfToken').value;
+        const msg = document.getElementById('createMsg');
+        msg.textContent = '';
+        if (!id) { msg.textContent = 'ID is required'; return false; }
+        try {
+          const res = await fetch('/create-counter', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': token
+            },
+            body: JSON.stringify({ id, initial_count: initial ? Number(initial) : 0 })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 201) {
+            msg.textContent = 'Created';
+            document.getElementById('createForm').reset();
+            fetchStats();
+          } else {
+            msg.textContent = data.error || 'Failed to create';
+          }
+        } catch (err) {
+          console.error(err);
+          msg.textContent = 'Network error';
+        }
+        return false;
+      }
+
+      function renderStats(data) {
+        totalCountersEl.textContent = (data.total_counters ?? 0).toLocaleString();
+        totalCountEl.textContent = (data.total_count ?? 0).toLocaleString();
+        lastActivityEl.textContent = data.last_activity ? new Date(data.last_activity).toLocaleString() : '—';
+
+        // Render or update chart for top counters
+        const labels = (data.top_counters || []).map(x => x.id);
+        const values = (data.top_counters || []).map(x => x.count);
+        const ctx = document.getElementById('topCountersChart');
+        if (!topChart) {
+          topChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Count',
+                data: values,
+                backgroundColor: 'rgba(99, 102, 241, 0.6)'
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: false,
+              scales: {
+                y: { beginAtZero: true }
+              }
+            }
+          });
+        } else {
+          topChart.data.labels = labels;
+          topChart.data.datasets[0].data = values;
+          topChart.update('none');
+        }
+
+        // Render recent table
+        recentTableBody.innerHTML = '';
+        (data.recently_updated || []).forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${escapeHtml(row.id)}</td>
+            <td>${Number(row.count ?? 0).toLocaleString()}</td>
+            <td>${row.last_updated ? new Date(row.last_updated).toLocaleString() : '—'}</td>
+          `;
+          recentTableBody.appendChild(tr);
+        });
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      fetchStats();
+      setInterval(fetchStats, 5000);
+      function toggleUserMenu(e){
+        e.preventDefault();
+        const dd = document.getElementById('userDropdown');
+        dd.classList.toggle('open');
+        document.addEventListener('click', function handler(ev){
+          if(!dd.contains(ev.target) && ev.target !== e.target){ dd.classList.remove('open'); document.removeEventListener('click', handler); }
+        });
+      }
+      function confirmLogout(){
+        return confirm('Are you sure you want to log out?');
+      }
+    </script>
+  </body>
+  </html>
+
+

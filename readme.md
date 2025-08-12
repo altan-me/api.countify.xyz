@@ -64,6 +64,53 @@ The Counter API provides the following endpoints:
   ```
 - **Example**: [https://api.countify.xyz/increase/testID](https://api.countify.xyz/increase/testID)
 
+### Stats
+
+- **Endpoint**: `GET /stats`
+- **Description**: Returns global statistics including `total_counters`, `total_count`, `last_activity`, `top_counters` and `recently_updated`.
+
+## UI
+
+- Landing page: `/`
+- Dashboard: `/dashboard` (polls the `/stats` endpoint)
+
+If running locally without Docker:
+
+```bash
+export DATABASE=./counters.db
+python app.py
+```
+
+## Testing
+
+Run the automated tests to validate the API endpoints using pytest. The tests use Flask's test client and a temporary SQLite database, so you don't need to start the server.
+
+### Windows (PowerShell)
+
+```powershell
+cd C:\Users\admin\Documents\GitHub\api.countify.xyz
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -U pip pytest flask
+pytest -q
+```
+
+### macOS/Linux
+
+```bash
+cd /path/to/api.countify.xyz
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip pytest flask
+pytest -q
+```
+
+You can also run the single test file directly:
+
+```bash
+python tests/test_api.py
+```
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](#) for details on our code of conduct, and the process for submitting pull requests to us.

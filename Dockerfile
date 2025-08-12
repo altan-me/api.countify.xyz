@@ -18,4 +18,4 @@ EXPOSE 5000/tcp
 ENV DATABASE /data/counters.db
 
 # Run app.py when the container launches
-CMD ["gunicorn", "-w 4", "-b", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]

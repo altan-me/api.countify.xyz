@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Countify - Landing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="container nav-inner">
+        <a class="brand" href="/">🔢 Countify</a>
+        <div class="nav-links">
+          <a href="/" class="{{ 'active' if request.path == '/' else '' }}">🏠 Landing</a>
+          <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
+          {% if g.user %}
+          <div class="user-menu" x-data>
+            <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
+            <div class="user-dropdown" id="userDropdown">
+              <div class="section">
+                <div><strong>👤 {{ g.user.username }}</strong></div>
+                <div class="muted">Signed in</div>
+              </div>
+              <div class="section">
+                <form method="post" action="/logout" onsubmit="return confirmLogout()">
+                  <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
+                  <button type="submit" class="btn danger" style="width:100%">🚪 Log out</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <a href="/login" class="{{ 'active' if request.path.startswith('/login') else '' }}">🔐 Login</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+
+    <main class="container" style="padding-top: 40px;">
+      <h1>🙌 Welcome to Countify</h1>
+      <p class="muted">Simple, resilient counters and realtime stats.</p>
+      <p>
+        Explore the <a href="/dashboard">dashboard</a> or try the API endpoints described in the README.
+      </p>
+    </main>
+
+    <footer class="container muted">
+      <small>Powered by Countify</small>
+    </footer>
+    <script>
+      function toggleUserMenu(e){
+        e.preventDefault();
+        const dd = document.getElementById('userDropdown');
+        dd.classList.toggle('open');
+        document.addEventListener('click', function handler(ev){
+          if(!dd.contains(ev.target) && ev.target !== e.target){ dd.classList.remove('open'); document.removeEventListener('click', handler); }
+        });
+      }
+      function confirmLogout(){
+        return confirm('Are you sure you want to log out?');
+      }
+    </script>
+  </body>
+  </html>
+
+
