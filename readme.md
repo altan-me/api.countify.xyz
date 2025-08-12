@@ -18,23 +18,43 @@ pip install flask
 
 Clone the repository to your local machine and navigate to the directory containing the Dockerfile.
 
-### Building the Docker Container
+### Build and Run with Docker
 
-Build the Docker container for the Counter API using the following command:
-
-```bash
-docker build -t counter-api .
-```
-
-### Running the Application
-
-Run the application using Docker with the following command:
+Build the image:
 
 ```bash
-docker run -d -p 5000:5000 -v $(pwd)/data:/data counter-api
+docker build -t countify .
 ```
 
-This command will start the Counter API in a detached mode, map port 5000 of the container to port 5000 on your host, and mount the `./data` directory on the host to `/data` in the container for persistent storage.
+Run the container (Linux/macOS):
+
+```bash
+docker run -d --name countify \
+  -p 5000:5000 \
+  -e SECRET_KEY="change-me" \
+  -e ADMIN_PASSWORD="set-admin-pass" \
+  -e SESSION_COOKIE_SECURE=1 \
+  -v $(pwd)/data:/data \
+  countify
+```
+
+Run the container (Windows PowerShell):
+
+```powershell
+docker run -d --name countify `
+  -p 5000:5000 `
+  -e SECRET_KEY="change-me" `
+  -e ADMIN_PASSWORD="set-admin-pass" `
+  -e SESSION_COOKIE_SECURE=1 `
+  -v ${PWD}\data:/data `
+  countify
+```
+
+Notes:
+- App listens on port 5000.
+- Data is persisted under `./data` on the host.
+- On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs.
+- Sessions last 2 days and refresh on activity. Set a stable `SECRET_KEY` for persistence across restarts.
 
 ## API Usage
 
@@ -78,6 +98,8 @@ If running locally without Docker:
 
 ```bash
 export DATABASE=./counters.db
+export SECRET_KEY=change-me
+export ADMIN_PASSWORD=set-admin-pass
 python app.py
 ```
 
