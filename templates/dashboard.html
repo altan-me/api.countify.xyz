@@ -76,6 +76,7 @@
                 <th>ID</th>
                 <th>Count</th>
                 <th>Updated</th>
+                <th>API</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -114,6 +115,7 @@
       const totalCountEl = document.getElementById('totalCount');
       const lastActivityEl = document.getElementById('lastActivity');
       const recentTableBody = document.querySelector('#recentTable tbody');
+      const userHash = "{{ g.user.public_id if g.user else '' }}";
 
       let topChart;
 
@@ -199,10 +201,14 @@
         recentTableBody.innerHTML = '';
         (data.recently_updated || []).forEach(row => {
           const tr = document.createElement('tr');
+          const safeId = escapeHtml(row.id);
           tr.innerHTML = `
-            <td>${escapeHtml(row.id)}</td>
+            <td>${safeId}</td>
             <td>${Number(row.count ?? 0).toLocaleString()}</td>
             <td>${row.last_updated ? new Date(row.last_updated).toLocaleString() : '—'}</td>
+            <td>
+              <button class="btn" onclick="openApiMenu(event, '${safeId}')">Copy API</button>
+            </td>
           `;
           recentTableBody.appendChild(tr);
         });
@@ -219,6 +225,91 @@
 
       fetchStats();
       setInterval(fetchStats, 5000);
+      
+      function openApiMenu(e, id){
+        e.preventDefault();
+        closeApiMenu();
+        const origin = window.location.origin;
+        const hash = userHash || '';
+        const getUrl = `${origin}/get-total/${hash}/${id}`.replace('//get-total', '/get-total');
+        const incUrl = `${origin}/increment/${hash}/${id}`.replace('//increment', '/increment');
+        const incBody = '{"value": 5}';
+        const inc2Url = `${origin}/increase/${hash}/${id}`.replace('//increase', '/increase');
+
+        const menu = document.createElement('div');
+        menu.id = 'apiMenu';
+        menu.style.position = 'absolute';
+        menu.style.minWidth = '280px';
+        menu.style.background = 'var(--card-bg, #fff)';
+        menu.style.border = '1px solid #e5e7eb';
+        menu.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)';
+        menu.style.borderRadius = '8px';
+        menu.style.padding = '10px';
+        menu.style.zIndex = '1000';
+
+        const rect = e.target.getBoundingClientRect();
+        menu.style.top = `${rect.bottom + window.scrollY + 6}px`;
+        menu.style.left = `${rect.left + window.scrollX}px`;
+
+        menu.innerHTML = `
+          <div style="font-weight:600; margin-bottom:6px;">Copy API paths</div>
+          <div class="api-row">
+            <div class="muted" style="font-size:12px;">GET total</div>
+            <div class="api-input">
+              <input type="text" readonly value="${getUrl}" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(getUrl)}', this)">Copy</button>
+            </div>
+          </div>
+          <div class="api-row" style="margin-top:8px;">
+            <div class="muted" style="font-size:12px;">POST increment by 1</div>
+            <div class="api-input">
+              <input type="text" readonly value="${incUrl}" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incUrl)}', this)">Copy</button>
+            </div>
+          </div>
+          <div class="api-row" style="margin-top:8px;">
+            <div class="muted" style="font-size:12px;">POST increase</div>
+            <div class="api-input">
+              <input type="text" readonly value="${inc2Url}" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(inc2Url)}', this)">Copy</button>
+            </div>
+            <div class="muted" style="font-size:12px; margin-top:4px; display:flex; gap:6px; align-items:center;">
+              Body
+              <code style="background:#f3f4f6; padding:2px 4px; border-radius:4px;">{\"value\": 5}</code>
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incBody)}', this)">Copy body</button>
+            </div>
+          </div>
+        `;
+
+        document.body.appendChild(menu);
+        setTimeout(() => { document.addEventListener('click', outsideCloseHandler); }, 0);
+      }
+
+      function outsideCloseHandler(ev){
+        const menu = document.getElementById('apiMenu');
+        if(menu && !menu.contains(ev.target)){
+          closeApiMenu();
+        }
+      }
+      function closeApiMenu(){
+        const menu = document.getElementById('apiMenu');
+        if(menu){
+          document.removeEventListener('click', outsideCloseHandler);
+          menu.remove();
+        }
+      }
+
+      async function copyAndToast(encodedText, btn){
+        const text = decodeURIComponent(encodedText);
+        try{
+          await navigator.clipboard.writeText(text);
+          const old = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = old; }, 1200);
+        }catch(err){
+          console.error(err);
+        }
+      }
       function toggleUserMenu(e){
         e.preventDefault();
         const dd = document.getElementById('userDropdown');

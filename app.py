@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import secrets
+import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, jsonify, request, make_response, render_template, session, redirect, url_for, g
@@ -10,6 +11,11 @@ import re
 
 app = Flask(__name__)
 DATABASE = os.getenv('DATABASE', 'counters.db')
+
+def generate_public_id() -> str:
+    """Generate a short, lowercase, URL-friendly public id.
+    Uses 40 bits of randomness (10 hex chars)."""
+    return uuid.uuid4().hex[:10]
 
 def get_db():
     db_path = DATABASE  # Correctly assigning the DATABASE constant to db_path
@@ -33,7 +39,8 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY,
                     password_hash TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    public_id TEXT
                 )
             ''')
             db.execute('''
@@ -44,13 +51,64 @@ def init_db():
                     locked_until TIMESTAMP
                 )
             ''')
-            # Lightweight migration: add owner column if missing in existing DBs
+            # Lightweight migration: add owner/public_id columns and restructure counters table if needed
             try:
                 cur = db.cursor()
                 cur.execute("PRAGMA table_info(counters)")
-                cols = {row[1] for row in cur.fetchall()}  # name is at index 1
-                if 'owner' not in cols:
+                cols_info = cur.fetchall()
+                colnames = {row[1] for row in cols_info}  # name is at index 1
+                if 'owner' not in colnames:
                     cur.execute('ALTER TABLE counters ADD COLUMN owner TEXT')
+                # Schema v2: introduce stable unique key and allow duplicate names per owner
+                if 'counter_key' not in colnames:
+                    db.execute('''
+                        CREATE TABLE IF NOT EXISTS counters_new (
+                            counter_key TEXT PRIMARY KEY,
+                            id TEXT NOT NULL,
+                            count INTEGER NOT NULL DEFAULT 0,
+                            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            owner TEXT,
+                            UNIQUE(owner, id)
+                        )
+                    ''')
+                    # Migrate existing rows
+                    cur2 = db.cursor()
+                    cur2.execute('SELECT id, count, last_updated, owner FROM counters')
+                    rows = cur2.fetchall() or []
+                    for row in rows:
+                        legacy_name = row['id']
+                        owner_val = row['owner']
+                        key_val = f"{(owner_val or '')}|{legacy_name}"
+                        db.execute(
+                            'INSERT OR REPLACE INTO counters_new (counter_key, id, count, last_updated, owner) VALUES (?, ?, ?, ?, ?)',
+                            (key_val, legacy_name, row['count'], row['last_updated'], owner_val),
+                        )
+                    db.execute('DROP TABLE counters')
+                    db.execute('ALTER TABLE counters_new RENAME TO counters')
+                    db.execute('CREATE INDEX IF NOT EXISTS idx_counters_owner ON counters(owner)')
+                # Ensure users.public_id exists and is populated with lowercase hex slug
+                cur.execute("PRAGMA table_info(users)")
+                user_cols = {row[1] for row in cur.fetchall()}
+                if 'public_id' not in user_cols:
+                    cur.execute('ALTER TABLE users ADD COLUMN public_id TEXT')
+                # Backfill any missing public_id values
+                cur.execute('SELECT username, public_id FROM users')
+                for u in cur.fetchall() or []:
+                    current_pid = u['public_id'] or ''
+                    # Accept only lowercase hex slugs, else replace
+                    if not re.fullmatch(r'[0-9a-f]{8,12}', current_pid):
+                        new_pid = generate_public_id()
+                        # Ensure uniqueness
+                        while True:
+                            try:
+                                db.execute('UPDATE users SET public_id = ? WHERE username = ?', (new_pid, u['username']))
+                                break
+                            except sqlite3.IntegrityError:
+                                new_pid = generate_public_id()
+                    elif current_pid != current_pid.lower():
+                        # Normalize to lowercase if needed
+                        db.execute('UPDATE users SET public_id = ? WHERE username = ?', (current_pid.lower(), u['username']))
+                db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)')
             except Exception as _e:
                 # Non-fatal; continue without interrupting app startup
                 pass
@@ -177,10 +235,31 @@ def create_app():
         cursor.execute('DELETE FROM auth_attempts WHERE key = ?', (key,))
         db.commit()
 
+    def get_user_by_public_id(public_id: str) -> str | None:
+        try:
+            db = get_db()
+            cur = db.cursor()
+            cur.execute('SELECT username FROM users WHERE public_id = ?', (public_id.lower(),))
+            row = cur.fetchone()
+            return row['username'] if row else None
+        except Exception:
+            return None
+
     @app.before_request
     def load_current_user():
         user_id = session.get('user_id')
-        g.user = {'username': user_id} if user_id else None
+        if user_id:
+            try:
+                db = get_db()
+                cur = db.cursor()
+                cur.execute('SELECT public_id FROM users WHERE username = ?', (user_id,))
+                row = cur.fetchone()
+                public_id = row['public_id'] if row else None
+            except Exception:
+                public_id = None
+            g.user = {'username': user_id, 'public_id': public_id}
+        else:
+            g.user = None
         # Ensure a CSRF token exists for safe methods so templates can render logout forms
         if request.method in ('GET', 'HEAD'):
             token = session.get('csrf_token')
@@ -199,31 +278,82 @@ def create_app():
         payload = request.get_json(silent=True) or {}
         return payload.get('csrf_token')
 
+    def _parse_key_and_name(param: str) -> tuple[str, str, str | None]:
+        """Return (counter_key, name, owner_or_none) from API path param.
+        If param includes a '|', treat as full key: 'owner|name'. Empty owner is allowed.
+        Otherwise, assume global (no owner) with key '|name'.
+        """
+        if '|' in param:
+            owner_part, name_part = param.split('|', 1)
+            return param, name_part, (owner_part if owner_part != '' else None)
+        # Default to namespaced by the logged-in user if present; otherwise global
+        owner_part = session.get('user_id')
+        if owner_part:
+            return f"{owner_part}|{param}", param, owner_part
+        return f"|{param}", param, None
+
     @app.route('/get-total/<counter_id>', methods=['GET'])
     def get_total(counter_id):
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT count, last_updated FROM counters WHERE id = ?', (counter_id,))
+        counter_key, name, owner_val = _parse_key_and_name(counter_id)
+        cursor.execute('SELECT count, last_updated FROM counters WHERE counter_key = ?', (counter_key,))
+        row = cursor.fetchone()
+        if row:
+            return jsonify(id=name, count=row['count'], last_updated=row['last_updated'])
+        else:
+            cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, 0, ?)', (counter_key, name, owner_val))
+            db.commit()
+            return jsonify(id=name, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
+
+    @app.route('/get-total/<user_hash>/<counter_id>', methods=['GET'])
+    def get_total_for_user(user_hash: str, counter_id: str):
+        owner = get_user_by_public_id(user_hash)
+        if not owner:
+            return make_response(jsonify({'error': 'Unknown user'}), 404)
+        db = get_db()
+        cursor = db.cursor()
+        counter_key = f"{owner}|{counter_id}"
+        cursor.execute('SELECT count, last_updated FROM counters WHERE counter_key = ?', (counter_key,))
         row = cursor.fetchone()
         if row:
             return jsonify(id=counter_id, count=row['count'], last_updated=row['last_updated'])
-        else:
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, 0)', (counter_id,))
-            db.commit()
-            return jsonify(id=counter_id, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
+        cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, 0, ?)', (counter_key, counter_id, owner))
+        db.commit()
+        return jsonify(id=counter_id, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
 
     @app.route('/increment/<counter_id>', methods=['POST'])
     def increment_by_one(counter_id):
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT count FROM counters WHERE id = ?', (counter_id,))
+        counter_key, name, owner_val = _parse_key_and_name(counter_id)
+        cursor.execute('SELECT count FROM counters WHERE counter_key = ?', (counter_key,))
         row = cursor.fetchone()
         if row:
             new_count = row['count'] + 1
-            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_count, counter_id))
+            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE counter_key = ?', (new_count, counter_key))
         else:
             new_count = 1
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, ?)', (counter_id, new_count))
+            cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, name, new_count, owner_val))
+        db.commit()
+        return jsonify(id=name, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+
+    @app.route('/increment/<user_hash>/<counter_id>', methods=['POST'])
+    def increment_by_one_for_user(user_hash: str, counter_id: str):
+        owner = get_user_by_public_id(user_hash)
+        if not owner:
+            return make_response(jsonify({'error': 'Unknown user'}), 404)
+        db = get_db()
+        cursor = db.cursor()
+        counter_key = f"{owner}|{counter_id}"
+        cursor.execute('SELECT count FROM counters WHERE counter_key = ?', (counter_key,))
+        row = cursor.fetchone()
+        if row:
+            new_count = row['count'] + 1
+            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE counter_key = ?', (new_count, counter_key))
+        else:
+            new_count = 1
+            cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, counter_id, new_count, owner))
         db.commit()
         return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
 
@@ -334,15 +464,17 @@ def create_app():
         db = get_db()
         cursor = db.cursor()
         try:
+            owner_val = session.get('user_id')
+            counter_key, name, _ = _parse_key_and_name(f"{owner_val}|{counter_id}")
             if initial_count == 0:
-                cursor.execute('INSERT INTO counters (id, count, owner) VALUES (?, 0, ?)', (counter_id, session.get('user_id')))
+                cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, 0, ?)', (counter_key, name, owner_val))
             else:
-                cursor.execute('INSERT INTO counters (id, count, owner) VALUES (?, ?, ?)', (counter_id, initial_count, session.get('user_id')))
+                cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, name, initial_count, owner_val))
             db.commit()
         except sqlite3.IntegrityError:
             return make_response(jsonify({'error': 'Counter already exists'}), 409)
 
-        return make_response(jsonify({'id': counter_id, 'count': initial_count, 'message': 'created'}), 201)
+        return make_response(jsonify({'id': name, 'count': initial_count, 'message': 'created'}), 201)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -429,8 +561,9 @@ def create_app():
             return make_response(render_template('signup.html', error='Too many attempts. Try again later.'), 429)
 
         try:
+            pid = generate_public_id()
             with db:
-                db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, generate_password_hash(password)))
+                db.execute('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)', (username, generate_password_hash(password), pid))
         except sqlite3.IntegrityError:
             # Register a failure against the IP and return conflict
             register_failure(db, key)
@@ -448,14 +581,35 @@ def create_app():
         value = int(request.json['value'])
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT count FROM counters WHERE id = ?', (counter_id,))
+        counter_key, name, owner_val = _parse_key_and_name(counter_id)
+        cursor.execute('SELECT count FROM counters WHERE counter_key = ?', (counter_key,))
         row = cursor.fetchone()
         if row:
             new_count = row['count'] + value
-            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_count, counter_id))
+            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE counter_key = ?', (new_count, counter_key))
         else:
             new_count = value
-            cursor.execute('INSERT INTO counters (id, count) VALUES (?, ?)', (counter_id, new_count))
+            cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, name, new_count, owner_val))
+        db.commit()
+        return jsonify(id=name, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+
+    @app.route('/increase/<user_hash>/<counter_id>', methods=['POST'])
+    def increase_by_value_for_user(user_hash: str, counter_id: str):
+        value = int(request.json['value'])
+        owner = get_user_by_public_id(user_hash)
+        if not owner:
+            return make_response(jsonify({'error': 'Unknown user'}), 404)
+        db = get_db()
+        cursor = db.cursor()
+        counter_key = f"{owner}|{counter_id}"
+        cursor.execute('SELECT count FROM counters WHERE counter_key = ?', (counter_key,))
+        row = cursor.fetchone()
+        if row:
+            new_count = row['count'] + value
+            cursor.execute('UPDATE counters SET count = ?, last_updated = CURRENT_TIMESTAMP WHERE counter_key = ?', (new_count, counter_key))
+        else:
+            new_count = value
+            cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, counter_id, new_count, owner))
         db.commit()
         return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
 
