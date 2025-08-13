@@ -3,17 +3,27 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Countify - Landing</title>
+    <title>Countify.xyz - Simple Counter API</title>
     <link rel="stylesheet" href="/static/style.css" />
+    <meta name="title" content="Countify.xyz - Simple Counter API" />
+    <meta name="description" content="Countify is a simple counter API service that given an ID tracks hits or increments by a value" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Countify.xyz - Simple Counter API" />
+    <meta property="og:description" content="Countify is a simple counter API service that given an ID tracks hits or increments by a value" />
+    <meta property="twitter:title" content="Countify.xyz - Simple Counter API" />
+    <meta property="twitter:description" content="Countify is a simple counter API service that given an ID tracks hits or increments by a value" />
   </head>
   <body>
     <nav class="navbar">
       <div class="container nav-inner">
-        <a class="brand" href="/">🔢 Countify</a>
+        <a class="brand" href="/">👌 countify.xyz</a>
         <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#about">About</a>
+          <a href="#documentation">Documentation</a>
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
-          <div class="user-menu" x-data>
+          <div class="user-menu">
             <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
             <div class="user-dropdown" id="userDropdown">
               <div class="section">
@@ -36,16 +46,121 @@
       </div>
     </nav>
 
-    <main class="container" style="padding-top: 40px;">
-      <h1>🙌 Welcome to Countify</h1>
-      <p class="muted">Simple, resilient counters and realtime stats.</p>
-      <p>
-        Explore the <a href="/dashboard">dashboard</a> or try the API endpoints described in the README.
+    <header class="container" style="padding-top: 32px;">
+      <h1>Account-scoped counters for your app</h1>
+      <p class="muted" style="margin-top: 6px;">Create counters on your dashboard and use shareable API URLs that are scoped to your account.</p>
+      <p style="margin-top: 12px; display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn btn-lg primary" href="/signup">Create an account</a>
+        <a class="btn btn-lg secondary" href="#documentation">See API Docs</a>
       </p>
+    </header>
+
+    <main class="container">
+      <section id="features" class="cards" style="margin-top: 24px;">
+        <div class="card">
+          <div class="label">🔒 Account-scoped</div>
+          <div class="value small" style="margin-top: 10px;">Your counters are namespaced to your user. Share public API URLs using your account hash.</div>
+        </div>
+        <div class="card">
+          <div class="label">📋 Copy API paths</div>
+          <div class="value small" style="margin-top: 10px;">Use the dashboard to copy ready-to-use URLs for each counter.</div>
+        </div>
+        <div class="card">
+          <div class="label">➕ Flexible increments</div>
+          <div class="value small" style="margin-top: 10px;">Increment by 1 or increase by any value up to 64-bit integer limits.</div>
+        </div>
+      </section>
+
+      <section id="about" class="grid-2" style="margin-top: 28px;">
+        <div class="panel">
+          <div class="panel-header"><h2>📊 About Countify API</h2></div>
+          <div style="padding: 14px 16px;">
+            <p class="muted">Countify API provides a simple and effective way to manage counters for your application. Whether you're tracking views, clicks, or any other metric, our API makes it easy to get started and scale with your needs.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2>💪 Best-Effort Service</h2></div>
+          <div style="padding: 14px 16px;">
+            <p class="muted">This API is provided as a best-effort service. While we strive to provide a reliable and high-quality experience, we cannot guarantee uptime, accuracy, or specific outcomes. Use of this service is at your own discretion.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="documentation" style="margin-top: 28px;">
+        <div class="panel">
+          <div class="panel-header"><h2>API Documentation</h2></div>
+          <div style="padding: 14px 16px;">
+            <div class="panel" style="margin-bottom: 12px;">
+              <div class="panel-header"><h3 style="margin:0;">How it works</h3></div>
+              <div style="padding: 12px 14px;">
+                <ol class="muted" style="margin:0; padding-left: 18px;">
+                  <li>Sign up and go to the dashboard.</li>
+                  <li>Create a counter ID (letters, numbers, _ or -, max 64 chars).</li>
+                  <li>Use the “Copy API” menu to get your account-scoped URLs. These include your public account hash.</li>
+                </ol>
+              </div>
+            </div>
+            <div class="panel" style="margin-bottom: 12px;">
+              <div class="panel-header" style="display:flex; align-items:center; gap:10px;">
+                <span class="btn small" style="pointer-events:none;">GET</span>
+                <h3 style="margin:0;">/get-total/{public_id}/{id}</h3>
+              </div>
+              <div style="padding: 12px 14px;">
+                <p class="muted">Returns the current count for your counter. If it doesn’t exist yet, it is initialized to 0 in your account namespace.</p>
+                <pre style="margin-top:8px;"><code>https://api.countify.xyz/get-total/{your_public_id}/my-counter</code></pre>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-bottom: 12px;">
+              <div class="panel-header" style="display:flex; align-items:center; gap:10px;">
+                <span class="btn small" style="background:#16a34a; pointer-events:none;">POST</span>
+                <h3 style="margin:0;">/increment/{public_id}/{id}</h3>
+              </div>
+              <div style="padding: 12px 14px;">
+                <p class="muted">Increase the count by 1 in your account namespace. If the counter is new, it’s created at 1.</p>
+                <pre style="margin-top:8px;"><code>https://api.countify.xyz/increment/{your_public_id}/my-counter</code></pre>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-bottom: 12px;">
+              <div class="panel-header" style="display:flex; align-items:center; gap:10px;">
+                <span class="btn small" style="background:#16a34a; pointer-events:none;">POST</span>
+                <h3 style="margin:0;">/increase/{public_id}/{id}</h3>
+              </div>
+              <div style="padding: 12px 14px;">
+                <p class="muted">Increase by any positive integer value. New counters start at the provided value. Max value is limited to SQLite 64-bit integer range.</p>
+                <pre style="margin-top:8px;"><code>https://api.countify.xyz/increase/{your_public_id}/my-counter</code></pre>
+                <div class="muted" style="margin-top: 8px;">Example request body</div>
+                <pre style="margin-top:6px;"><code>{
+  "value": 69
+}</code></pre>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-bottom: 12px;">
+              <div class="panel-header" style="display:flex; align-items:center; gap:10px;">
+                <h3 style="margin:0;">Counter IDs and limits</h3>
+              </div>
+              <div style="padding: 12px 14px;">
+                <ul class="muted" style="margin:0; padding-left: 18px;">
+                  <li>ID format: letters, numbers, underscore, or hyphen. Max 64 characters.</li>
+                  <li>Values: non-negative integers. Max within 64-bit signed integer.</li>
+                  <li>Your <em>public_id</em> is shown on the dashboard and used to scope API calls to your account.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
-    <footer class="container muted">
-      <small>Powered by Countify</small>
+    <footer class="container muted" style="padding-top: 16px;">
+      <div style="border-top:1px solid var(--border); padding-top: 16px; text-align:center;">
+        <small id="copyright"></small>
+      </div>
+      <div style="text-align:center; margin-top: 6px;">
+        <small>Made with ❤️ from New Zealand</small>
+      </div>
     </footer>
     <script>
       function toggleUserMenu(e){
@@ -59,6 +174,10 @@
       function confirmLogout(){
         return confirm('Are you sure you want to log out?');
       }
+      // Footer year
+      const currentYear = new Date().getFullYear();
+      const el = document.getElementById('copyright');
+      if(el){ el.textContent = `© ${currentYear} Countify API. Built with integrity and a commitment to ethical practices.`; }
     </script>
   </body>
   </html>

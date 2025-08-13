@@ -106,6 +106,10 @@ body {
   padding: 10px 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease, background 160ms ease;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  text-decoration: none;
+  display: inline-block;
 }
 .btn:hover { filter: brightness(1.05); }
 .btn.danger { background: #ef4444; }
@@ -113,6 +117,25 @@ body {
 
 /* icon-only buttons: smaller padding to avoid overflow */
 .btn.icon { padding: 6px 8px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Button size variants */
+.btn.small { padding: 6px 8px; font-size: 12px; }
+.btn.btn-lg { padding: 12px 18px; font-size: 16px; border-radius: 10px; }
+
+/* Button style variants for landing CTA */
+.btn.primary {
+  background: linear-gradient(135deg, #6366f1 0%, #7c3aed 45%, #2563eb 100%);
+  color: #fff;
+}
+.btn.primary:hover { transform: translateY(-1px); }
+.btn.primary:active { transform: translateY(0); }
+
+.btn.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn.secondary:hover { background: rgba(255,255,255,0.03); }
 
 .alert {
   background: #23151d;
