@@ -2,7 +2,7 @@ import os
 import sqlite3
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, jsonify, request, make_response, render_template, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -222,10 +222,16 @@ def create_app():
         if locked_until:
             try:
                 # sqlite returns str timestamp by default when using CURRENT_TIMESTAMP
-                locked_dt = datetime.fromisoformat(locked_until) if isinstance(locked_until, str) else locked_until
+                if isinstance(locked_until, str):
+                    ts_str = locked_until.replace('Z', '+00:00')
+                    locked_dt = datetime.fromisoformat(ts_str)
+                else:
+                    locked_dt = locked_until
+                if locked_dt and locked_dt.tzinfo is None:
+                    locked_dt = locked_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 locked_dt = None
-            if locked_dt and locked_dt > datetime.utcnow():
+            if locked_dt and locked_dt > datetime.now(timezone.utc):
                 return True, locked_dt
         return False, None
 
@@ -234,7 +240,7 @@ def create_app():
         cursor = db.cursor()
         cursor.execute('SELECT attempts, last_attempt FROM auth_attempts WHERE key = ?', (key,))
         row = cursor.fetchone()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(minutes=WINDOW_MINUTES)
         if not row:
             cursor.execute('INSERT INTO auth_attempts (key, attempts, last_attempt) VALUES (?, ?, ?)', (key, 1, now.isoformat()))
@@ -243,7 +249,12 @@ def create_app():
         attempts = row['attempts'] or 0
         last_attempt = row['last_attempt']
         try:
-            last_dt = datetime.fromisoformat(last_attempt) if isinstance(last_attempt, str) else last_attempt
+            if isinstance(last_attempt, str):
+                last_dt = datetime.fromisoformat(last_attempt.replace('Z', '+00:00'))
+            else:
+                last_dt = last_attempt
+            if last_dt and last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
         except Exception:
             last_dt = now
         if last_dt < window_start:
@@ -330,7 +341,8 @@ def create_app():
         else:
             cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, 0, ?)', (counter_key, name, owner_val))
             db.commit()
-            return jsonify(id=name, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
+            ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            return jsonify(id=name, count=0, last_updated=ts)
 
     @app.route('/get-total/<user_hash>/<counter_id>', methods=['GET'])
     def get_total_for_user(user_hash: str, counter_id: str):
@@ -346,7 +358,8 @@ def create_app():
             return jsonify(id=counter_id, count=row['count'], last_updated=row['last_updated'])
         cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, 0, ?)', (counter_key, counter_id, owner))
         db.commit()
-        return jsonify(id=counter_id, count=0, last_updated=datetime.utcnow().isoformat() + 'Z')
+        ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify(id=counter_id, count=0, last_updated=ts)
 
     @app.route('/increment/<counter_id>', methods=['POST'])
     def increment_by_one(counter_id):
@@ -362,7 +375,8 @@ def create_app():
             new_count = 1
             cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, name, new_count, owner_val))
         db.commit()
-        return jsonify(id=name, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify(id=name, count=new_count, last_updated=ts)
 
     @app.route('/increment/<user_hash>/<counter_id>', methods=['POST'])
     def increment_by_one_for_user(user_hash: str, counter_id: str):
@@ -381,7 +395,8 @@ def create_app():
             new_count = 1
             cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, counter_id, new_count, owner))
         db.commit()
-        return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify(id=counter_id, count=new_count, last_updated=ts)
 
     @app.route('/stats', methods=['GET'])
     def get_stats():
@@ -604,14 +619,16 @@ def create_app():
         username = (request.form.get('username') or '').strip()
         password = request.form.get('password') or ''
         if not username or not password:
-            return make_response(render_template('login.html', error='Username and password are required.'), 400)
+            # Use a generic error to avoid leaking information
+            return make_response(render_template('login.html', error='Invalid username or password.'), 200)
 
         db = get_db()
         # Check lockout status for this username+ip
         key = login_key(username)
         locked, locked_until = is_locked(db, key)
         if locked:
-            return make_response(render_template('login.html', error='Too many attempts. Try again later.'), 429)
+            # Generic error message to avoid revealing lockout state
+            return make_response(render_template('login.html', error='Invalid username or password.'), 200)
         cursor = db.cursor()
         cursor.execute('SELECT password_hash FROM users WHERE username = ?', (username,))
         row = cursor.fetchone()
@@ -622,10 +639,9 @@ def create_app():
         except Exception:
             ok = False
         if not row or not ok:
-            just_locked = register_failure(db, key)
-            if just_locked:
-                return make_response(render_template('login.html', error='Too many attempts. Try again later.'), 429)
-            return make_response(render_template('login.html', error='Invalid credentials.'), 401)
+            register_failure(db, key)
+            # Always return a generic error and 200 OK to avoid signaling enumeration or lockout
+            return make_response(render_template('login.html', error='Invalid username or password.'), 200)
 
         session['user_id'] = username
         session.permanent = True
@@ -705,7 +721,8 @@ def create_app():
             new_count = value
             cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, name, new_count, owner_val))
         db.commit()
-        return jsonify(id=name, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify(id=name, count=new_count, last_updated=ts)
 
     @app.route('/increase/<user_hash>/<counter_id>', methods=['POST'])
     def increase_by_value_for_user(user_hash: str, counter_id: str):
@@ -725,7 +742,8 @@ def create_app():
             new_count = value
             cursor.execute('INSERT INTO counters (counter_key, id, count, owner) VALUES (?, ?, ?, ?)', (counter_key, counter_id, new_count, owner))
         db.commit()
-        return jsonify(id=counter_id, count=new_count, last_updated=datetime.now().isoformat() + 'Z')
+        ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify(id=counter_id, count=new_count, last_updated=ts)
 
     @app.errorhandler(404)
     def not_found(error):
