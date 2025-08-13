@@ -111,6 +111,9 @@ body {
 .btn.danger { background: #ef4444; }
 .btn.danger:hover { filter: brightness(1.05); }
 
+/* icon-only buttons: smaller padding to avoid overflow */
+.btn.icon { padding: 6px 8px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+
 .alert {
   background: #23151d;
   color: #ffd7e1;
@@ -175,6 +178,28 @@ header h1 { margin: 0 0 6px 0; }
 }
 .panel h2 { margin: 0; font-size: 16px; }
 
+/* Search input styling */
+.search { position: relative; }
+.search-input {
+  width: 220px;
+  background: #0c1530;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px 8px 34px;
+  color: var(--text);
+  outline: none;
+}
+.search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.2); }
+.search:before {
+  content: '🔎';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  opacity: 0.8;
+}
+
 canvas { width: 100% !important; }
 
 .chart-container {
@@ -183,10 +208,29 @@ canvas { width: 100% !important; }
   height: 260px; /* fixed height to prevent growth */
 }
 
-.table { width: 100%; border-collapse: collapse; }
-.table th, .table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+/* Scroll area for tables: reserve gutter for vertical scrollbar so content isn't hidden */
+.table-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding-right: 12px; /* extra space to ensure action buttons aren't clipped */
+}
+
+.table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.table th, .table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table th { color: var(--muted); font-weight: 600; font-size: 12px; }
-.table td { font-size: 14px; }
+.table td { font-size: 13px; }
+
+/* Recent table tighter layout, prevent horizontal scroll */
+#recentTable { table-layout: fixed; }
+#recentTable th:nth-child(1), #recentTable td:nth-child(1) { width: 31%; }
+#recentTable th:nth-child(2), #recentTable td:nth-child(2) { width: 14%; text-align: right; }
+#recentTable th:nth-child(3), #recentTable td:nth-child(3) { width: 28%; }
+#recentTable th:nth-child(4), #recentTable td:nth-child(4) { width: 11%; }
+#recentTable th:nth-child(5), #recentTable td:nth-child(5) { width: 16%; text-align: right; }
+
+.btn.small { padding: 6px 8px; font-size: 12px; }
 
 @media (max-width: 900px) {
   .cards { grid-template-columns: 1fr; }

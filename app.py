@@ -17,16 +17,33 @@ def generate_public_id() -> str:
     Uses 40 bits of randomness (10 hex chars)."""
     return uuid.uuid4().hex[:10]
 
-def get_db():
-    db_path = DATABASE  # Correctly assigning the DATABASE constant to db_path
-    db = sqlite3.connect(DATABASE)
-    print(f"Connecting to database at {db_path}")  # Debugging output
+def connect_db():
+    """Create a new SQLite connection with sane defaults for web usage."""
+    db = sqlite3.connect(
+        DATABASE,
+        timeout=30.0,
+        check_same_thread=False,
+    )
+    # Improve concurrency and reliability for mixed read/write load
+    try:
+        db.execute('PRAGMA journal_mode=WAL')
+        db.execute('PRAGMA busy_timeout=30000')
+        db.execute('PRAGMA synchronous=NORMAL')
+        db.execute('PRAGMA foreign_keys=ON')
+    except Exception:
+        pass
     db.row_factory = sqlite3.Row
     return db
 
+def get_db():
+    """Return a per-request SQLite connection stored on Flask's g."""
+    if not hasattr(g, 'db') or g.db is None:
+        g.db = connect_db()
+    return g.db
+
 def init_db():
     try:
-        with get_db() as db:
+        with connect_db() as db:
             db.execute('''
                 CREATE TABLE IF NOT EXISTS counters (
                     id TEXT PRIMARY KEY,
@@ -119,7 +136,7 @@ def init_db():
 
 def ensure_default_admin():
     try:
-        with get_db() as db:
+        with connect_db() as db:
             cursor = db.cursor()
             cursor.execute('SELECT COUNT(*) as c FROM users')
             row = cursor.fetchone()
@@ -152,6 +169,15 @@ def create_app():
     # Database initialization
     init_db()
     ensure_default_admin()
+
+    @app.teardown_appcontext
+    def close_db(exception=None):
+        db = g.pop('db', None)
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     # Helpers
     def get_or_create_csrf_token() -> str:
@@ -430,6 +456,91 @@ def create_app():
             'recently_updated': recently_updated,
         })
 
+    @app.route('/counters', methods=['GET'])
+    @login_required
+    def list_counters():
+        """Paginated counters list for the current user with optional search and sorting."""
+        try:
+            page = int(request.args.get('page', '1'))
+        except Exception:
+            page = 1
+        try:
+            page_size = int(request.args.get('page_size', '20'))
+        except Exception:
+            page_size = 20
+        page = max(1, page)
+        page_size = min(max(1, page_size), 100)
+
+        q = (request.args.get('q') or '').strip()
+        sort = (request.args.get('sort') or 'last_updated').lower()
+        order = (request.args.get('order') or 'desc').lower()
+        sort_map = {
+            'id': 'id',
+            'count': 'count',
+            'last_updated': 'last_updated',
+        }
+        sort_col = sort_map.get(sort, 'last_updated')
+        order_dir = 'ASC' if order == 'asc' else 'DESC'
+
+        db = get_db()
+        cursor = db.cursor()
+
+        owner = session.get('user_id')
+        where = 'WHERE owner = ?'
+        params = [owner]
+        if q:
+            where += ' AND id LIKE ?'
+            params.append(f"%{q}%")
+
+        cursor.execute(f'SELECT COUNT(*) AS total FROM counters {where}', tuple(params))
+        total_row = cursor.fetchone() or {'total': 0}
+        total = int(total_row['total'] or 0)
+
+        offset = (page - 1) * page_size
+        cursor.execute(
+            f'''SELECT id, count, last_updated
+                FROM counters
+                {where}
+                ORDER BY {sort_col} {order_dir}
+                LIMIT ? OFFSET ?''',
+            tuple(params + [page_size, offset])
+        )
+        rows = cursor.fetchall() or []
+        items = [
+            {'id': r['id'], 'count': r['count'], 'last_updated': r['last_updated']}
+            for r in rows
+        ]
+
+        total_pages = (total + page_size - 1) // page_size if page_size else 1
+        return jsonify({
+            'items': items,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages,
+        })
+
+    @app.route('/counters/<counter_id>', methods=['DELETE'])
+    @login_required
+    def delete_counter(counter_id: str):
+        token = get_csrf_from_request()
+        if not validate_csrf_token(token):
+            return make_response(jsonify({'error': 'Bad CSRF token'}), 400)
+        counter_id = (counter_id or '').strip()
+        if not counter_id:
+            return make_response(jsonify({'error': 'id is required'}), 400)
+        if len(counter_id) > 64 or not re.fullmatch(r'[A-Za-z0-9_-]+', counter_id):
+            return make_response(jsonify({'error': 'id must be <=64 chars and only letters, numbers, _ or -'}), 400)
+
+        owner = session.get('user_id')
+        db = get_db()
+        cur = db.cursor()
+        cur.execute('DELETE FROM counters WHERE owner = ? AND id = ?', (owner, counter_id))
+        db.commit()
+        if cur.rowcount == 0:
+            return make_response(jsonify({'error': 'Not found'}), 404)
+        return ('', 204)
+
     @app.route('/', methods=['GET'])
     def landing():
         get_or_create_csrf_token()
@@ -460,6 +571,9 @@ def create_app():
             return make_response(jsonify({'error': 'id must be <=64 chars and only letters, numbers, _ or -'}), 400)
         if initial_count < 0:
             return make_response(jsonify({'error': 'initial_count must be >= 0'}), 400)
+        # Enforce SQLite 64-bit signed integer max to avoid overflow/undefined behavior
+        if initial_count > 9223372036854775807:
+            return make_response(jsonify({'error': 'initial_count is too large'}), 400)
 
         db = get_db()
         cursor = db.cursor()
