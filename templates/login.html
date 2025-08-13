@@ -9,7 +9,7 @@
   <body>
     <nav class="navbar">
       <div class="container nav-inner">
-        <a class="brand" href="/">🔢 Countify</a>
+        <a class="brand" href="/">👌 countify.xyz</a>
         <div class="nav-links">
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
@@ -53,9 +53,6 @@
         </div>
         <button type="submit" class="btn">Sign in</button>
       </form>
-      <p class="muted" style="margin-top: 12px;">
-        Default user is <code>admin</code>. Set password via <code>ADMIN_PASSWORD</code> or check console for temp password on first run.
-      </p>
     </main>
 
     <footer class="container muted">
