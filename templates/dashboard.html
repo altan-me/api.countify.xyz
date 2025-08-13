@@ -71,6 +71,14 @@
             <h2>⏱️ Recently Updated</h2>
             <div style="display:flex; gap:8px; align-items:center;">
               <div class="search"><input class="search-input" id="searchInput" type="search" placeholder="Search counters..." /></div>
+              <button class="btn small icon" id="refreshBtn" aria-label="Refresh" title="Refresh">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0114.13-3.36L23 10"></path>
+                  <path d="M20.49 15a9 9 0 01-14.13 3.36L1 14"></path>
+                </svg>
+              </button>
             </div>
           </div>
           <div class="table-scroll">
@@ -238,10 +246,23 @@
             <td>${Number(row.count ?? 0).toLocaleString()}</td>
             <td>${row.last_updated ? new Date(row.last_updated).toLocaleString() : '—'}</td>
             <td>
-              <button class="btn small icon" aria-label="Copy API" title="Copy API" onclick="openApiMenu(event, '${safeId}')">📋</button>
+              <button class="btn small icon" aria-label="Copy API" title="Copy API" onclick="openApiMenu(event, '${safeId}')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
             </td>
             <td>
-              <button class="btn small danger" aria-label="Delete" title="Delete" onclick="deleteCounter('${safeId}')">🗑️</button>
+              <button class="btn small danger icon" aria-label="Delete" title="Delete" onclick="deleteCounter('${safeId}')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
             </td>
           `;
           recentTableBody.appendChild(tr);
@@ -283,14 +304,19 @@
         }
       }
 
+      function refreshDashboard(){ fetchStats(); }
       fetchStats();
-      setInterval(fetchStats, 5000);
       document.getElementById('prevBtn').addEventListener('click', () => { if (listState.page > 1) { listState.page -= 1; fetchList(); } });
       document.getElementById('nextBtn').addEventListener('click', () => { if (listState.page < listState.totalPages) { listState.page += 1; fetchList(); } });
+      document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
+      let searchDebounce;
       document.getElementById('searchInput').addEventListener('input', (e) => {
-        listState.q = e.target.value.trim();
-        listState.page = 1;
-        fetchList();
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => {
+          listState.q = e.target.value.trim();
+          listState.page = 1;
+          fetchList();
+        }, 300);
       });
       
       function openApiMenu(e, id){
