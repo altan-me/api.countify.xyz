@@ -14,21 +14,10 @@
         <div class="nav-links" id="primaryNav">
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
-          <div class="user-menu">
-            <button class="user-btn">{{ g.user.username[:1] | upper }}</button>
-            <div class="user-dropdown" id="userDropdown">
-              <div class="section">
-                <div><strong>{{ g.user.username }}</strong></div>
-                <div class="muted">Signed in</div>
-              </div>
-              <div class="section">
-                <form method="post" action="/logout">
-                  <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
-                  <button type="submit" class="btn danger" style="width:100%">Log out</button>
-                </form>
-              </div>
-            </div>
-          </div>
+          <form method="post" action="/logout">
+            <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
+            <button type="submit" class="linkish">Log out</button>
+          </form>
           {% else %}
           <a href="/login" class="{{ 'active' if request.path.startswith('/login') else '' }}">🔐 Login</a>
           <a href="/signup" class="{{ 'active' if request.path.startswith('/signup') else '' }}">🆕 Sign up</a>
@@ -71,22 +60,12 @@
           a.addEventListener('click', () => nav.classList.remove('open'), { once: true });
         });
       }
-      function toggleUserMenu(e){
-        e.preventDefault();
-        const dd = document.getElementById('userDropdown');
-        dd.classList.toggle('open');
-        document.addEventListener('click', function handler(ev){
-          if(!dd.contains(ev.target) && ev.target !== e.target){ dd.classList.remove('open'); document.removeEventListener('click', handler); }
-        });
-      }
       function confirmLogout(){
         return confirm('Are you sure you want to log out?');
       }
       // Attach listeners
       const navToggle = document.querySelector('.nav-toggle');
       if(navToggle){ navToggle.addEventListener('click', toggleNav); }
-      const userBtn = document.querySelector('.user-btn');
-      if(userBtn){ userBtn.addEventListener('click', toggleUserMenu); }
       const logoutForm = document.querySelector('form[action="/logout"]');
       if(logoutForm){ logoutForm.addEventListener('submit', (e) => { if(!confirmLogout()) e.preventDefault(); }); }
     </script>

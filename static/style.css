@@ -158,8 +158,24 @@ body {
   margin-left: 16px;
   padding-bottom: 6px;
   border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 .linkish:hover { color: var(--text); }
+
+/* Ensure logout form aligns with nav links */
+.nav-links form { display: inline; margin: 0; }
+/* Logout matches nav link styling */
+.nav-links .linkish {
+  font-weight: inherit;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.nav-links .linkish::before { content: '🚪 '; }
+.nav-links .linkish:hover { color: var(--text); }
 
 .container {
   max-width: 1100px;
@@ -309,10 +325,25 @@ body.landing {
   .nav-links a {
     margin-left: 0;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: 0;
     white-space: nowrap;
   }
   .nav-links a:hover { background: rgba(255,255,255,0.04); }
+  /* Mobile: make logout look like other nav items */
+  .nav-links form { width: 100%; }
+  .nav-links .linkish {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 0;
+    border: none;
+    white-space: nowrap;
+    color: var(--muted);
+    background: transparent;
+  }
+  .nav-links .linkish:hover { background: rgba(255,255,255,0.04); color: #ffffff; }
 }
 
 
