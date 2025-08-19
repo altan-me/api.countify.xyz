@@ -234,6 +234,18 @@ canvas { width: 100% !important; }
   height: 260px; /* fixed height to prevent growth */
 }
 
+/* Landing page animated background */
+@keyframes landingGradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+body.landing {
+  background: linear-gradient(120deg, #0b1020 0%, #0f1730 20%, #121a35 40%, #1b2547 60%, #0c1530 80%, #0b1020 100%);
+  background-size: 600% 600%;
+  animation: landingGradientShift 12s ease-in-out infinite;
+}
+
 /* Scroll area for tables: reserve gutter for vertical scrollbar so content isn't hidden */
 .table-scroll {
   max-height: 360px;
