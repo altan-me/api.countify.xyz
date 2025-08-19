@@ -11,7 +11,8 @@
     <nav class="navbar">
       <div class="container nav-inner">
         <a class="brand" href="/">👌 countify.xyz</a>
-        <div class="nav-links">
+        <button class="nav-toggle" aria-label="Toggle navigation" onclick="toggleNav(event)">☰</button>
+        <div class="nav-links" id="primaryNav">
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
           <div class="user-menu">
@@ -127,11 +128,22 @@
       </section>
     </main>
 
-    <footer class="container muted">
-      <small>Powered by Countify</small>
-    </footer>
+    
 
     <script>
+      function toggleNav(e){
+        e.preventDefault();
+        const nav = document.getElementById('primaryNav');
+        if(!nav) return;
+        nav.classList.toggle('open');
+        const btn = e.currentTarget || e.target;
+        if(btn && btn.classList && btn.classList.contains('nav-toggle')){
+          btn.setAttribute('aria-expanded', nav.classList.contains('open') ? 'true' : 'false');
+        }
+        nav.querySelectorAll('a').forEach(a => {
+          a.addEventListener('click', () => nav.classList.remove('open'), { once: true });
+        });
+      }
       const totalCountersEl = document.getElementById('totalCounters');
       const totalCountEl = document.getElementById('totalCount');
       const lastActivityEl = document.getElementById('lastActivity');

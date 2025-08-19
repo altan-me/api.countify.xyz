@@ -54,6 +54,9 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* Mobile nav toggle (hidden on desktop) */
+.nav-toggle { display: none; }
+
 /* User menu */
 .user-menu { position: relative; display: inline-block; margin-left: 12px; }
 .user-btn {
@@ -258,6 +261,42 @@ canvas { width: 100% !important; }
 @media (max-width: 900px) {
   .cards { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
+  .nav-inner { position: relative; }
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-left: auto;
+    background: #1b2547;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 54px;
+    right: 16px;
+    left: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+    flex-direction: column;
+    gap: 6px;
+    z-index: 100;
+  }
+  .nav-links.open { display: flex; }
+  .nav-links a {
+    margin-left: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+  .nav-links a:hover { background: rgba(255,255,255,0.04); }
 }
 
 
