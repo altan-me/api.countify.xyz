@@ -331,51 +331,55 @@
 
         const menu = document.createElement('div');
         menu.id = 'apiMenu';
+        menu.className = 'api-menu';
         menu.style.position = 'absolute';
-        menu.style.minWidth = '280px';
-        menu.style.background = 'var(--card-bg, #fff)';
-        menu.style.border = '1px solid #e5e7eb';
-        menu.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)';
-        menu.style.borderRadius = '8px';
-        menu.style.padding = '10px';
-        menu.style.zIndex = '1000';
+        menu.setAttribute('role', 'dialog');
+        menu.setAttribute('aria-label', 'Copy API paths');
+        menu.tabIndex = -1;
 
         const rect = e.target.getBoundingClientRect();
         menu.style.top = `${rect.bottom + window.scrollY + 6}px`;
         menu.style.left = `${rect.left + window.scrollX}px`;
 
         menu.innerHTML = `
-          <div style="font-weight:600; margin-bottom:6px;">Copy API paths</div>
+          <div class="heading">Copy API paths</div>
           <div class="api-row">
             <div class="muted" style="font-size:12px;">GET total</div>
             <div class="api-input">
-              <input type="text" readonly value="${getUrl}" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(getUrl)}', this)">Copy</button>
+              <input type="text" readonly value="${getUrl}" aria-label="GET total URL" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(getUrl)}', this)" aria-label="Copy GET total URL">Copy</button>
             </div>
           </div>
-          <div class="api-row" style="margin-top:8px;">
+          <div class="api-row">
             <div class="muted" style="font-size:12px;">POST increment by 1</div>
             <div class="api-input">
-              <input type="text" readonly value="${incUrl}" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incUrl)}', this)">Copy</button>
+              <input type="text" readonly value="${incUrl}" aria-label="POST increment URL" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incUrl)}', this)" aria-label="Copy POST increment URL">Copy</button>
             </div>
           </div>
-          <div class="api-row" style="margin-top:8px;">
+          <div class="api-row">
             <div class="muted" style="font-size:12px;">POST increase</div>
             <div class="api-input">
-              <input type="text" readonly value="${inc2Url}" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(inc2Url)}', this)">Copy</button>
+              <input type="text" readonly value="${inc2Url}" aria-label="POST increase URL" />
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(inc2Url)}', this)" aria-label="Copy POST increase URL">Copy</button>
             </div>
-            <div class="muted" style="font-size:12px; margin-top:4px; display:flex; gap:6px; align-items:center;">
+            <div class="muted api-body-row" style="font-size:12px;">
               Body
-              <code style="background:#f3f4f6; padding:2px 4px; border-radius:4px;">{\"value\": 5}</code>
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incBody)}', this)">Copy body</button>
+              <code>{\"value\": 5}</code>
+              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incBody)}', this)" aria-label="Copy POST body">Copy body</button>
             </div>
           </div>
         `;
 
         document.body.appendChild(menu);
-        setTimeout(() => { document.addEventListener('click', outsideCloseHandler); }, 0);
+        // focus management for accessibility
+        menu.focus();
+        const firstInput = menu.querySelector('input');
+        if(firstInput){ firstInput.focus(); firstInput.select(); }
+        setTimeout(() => { 
+          document.addEventListener('click', outsideCloseHandler); 
+          document.addEventListener('keydown', escCloseHandler);
+        }, 0);
       }
 
       function outsideCloseHandler(ev){
@@ -384,10 +388,16 @@
           closeApiMenu();
         }
       }
+      function escCloseHandler(ev){
+        if(ev.key === 'Escape'){
+          closeApiMenu();
+        }
+      }
       function closeApiMenu(){
         const menu = document.getElementById('apiMenu');
         if(menu){
           document.removeEventListener('click', outsideCloseHandler);
+          document.removeEventListener('keydown', escCloseHandler);
           menu.remove();
         }
       }
