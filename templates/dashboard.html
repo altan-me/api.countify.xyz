@@ -11,19 +11,19 @@
     <nav class="navbar">
       <div class="container nav-inner">
         <a class="brand" href="/">👌 countify.xyz</a>
-        <button class="nav-toggle" aria-label="Toggle navigation" onclick="toggleNav(event)">☰</button>
+        <button class="nav-toggle" aria-label="Toggle navigation">☰</button>
         <div class="nav-links" id="primaryNav">
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
           <div class="user-menu">
-            <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
+            <button class="user-btn">{{ g.user.username[:1] | upper }}</button>
             <div class="user-dropdown" id="userDropdown">
               <div class="section">
                 <div><strong>👤 {{ g.user.username }}</strong></div>
                 <div class="muted">Signed in</div>
               </div>
               <div class="section">
-                <form method="post" action="/logout" onsubmit="return confirmLogout()">
+                <form method="post" action="/logout">
                   <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
                   <button type="submit" class="btn danger" style="width:100%">🚪 Log out</button>
                 </form>
@@ -111,7 +111,7 @@
           <h2>➕ Create Counter</h2>
         </div>
         <div class="container" style="padding-top: 0; padding-bottom: 16px;">
-          <form id="createForm" class="form" onsubmit="return handleCreate(event)">
+          <form id="createForm" class="form">
             <input type="hidden" id="csrfToken" value="{{ session['csrf_token'] }}" />
             <div class="form-row">
               <label for="newId">Counter ID</label>
@@ -130,7 +130,7 @@
 
     
 
-    <script>
+    <script nonce="{{ g.csp_nonce }}">
       function toggleNav(e){
         e.preventDefault();
         const nav = document.getElementById('primaryNav');
@@ -258,7 +258,7 @@
             <td>${Number(row.count ?? 0).toLocaleString()}</td>
             <td>${row.last_updated ? new Date(row.last_updated).toLocaleString() : '—'}</td>
             <td>
-              <button class="btn small icon" aria-label="Copy API" title="Copy API" onclick="openApiMenu(event, '${safeId}')">
+              <button class="btn small icon open-api" aria-label="Copy API" title="Copy API" data-id="${safeId}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -266,7 +266,7 @@
               </button>
             </td>
             <td>
-              <button class="btn small danger icon" aria-label="Delete" title="Delete" onclick="deleteCounter('${safeId}')">
+              <button class="btn small danger icon delete-counter" aria-label="Delete" title="Delete" data-id="${safeId}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polyline points="3 6 5 6 21 6"></polyline>
                   <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
@@ -359,26 +359,26 @@
             <div class="muted" style="font-size:12px;">GET total</div>
             <div class="api-input">
               <input type="text" readonly value="${getUrl}" aria-label="GET total URL" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(getUrl)}', this)" aria-label="Copy GET total URL">Copy</button>
+              <button class="btn small" data-copy="${encodeURIComponent(getUrl)}" aria-label="Copy GET total URL">Copy</button>
             </div>
           </div>
           <div class="api-row">
             <div class="muted" style="font-size:12px;">POST increment by 1</div>
             <div class="api-input">
               <input type="text" readonly value="${incUrl}" aria-label="POST increment URL" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incUrl)}', this)" aria-label="Copy POST increment URL">Copy</button>
+              <button class="btn small" data-copy="${encodeURIComponent(incUrl)}" aria-label="Copy POST increment URL">Copy</button>
             </div>
           </div>
           <div class="api-row">
             <div class="muted" style="font-size:12px;">POST increase</div>
             <div class="api-input">
               <input type="text" readonly value="${inc2Url}" aria-label="POST increase URL" />
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(inc2Url)}', this)" aria-label="Copy POST increase URL">Copy</button>
+              <button class="btn small" data-copy="${encodeURIComponent(inc2Url)}" aria-label="Copy POST increase URL">Copy</button>
             </div>
             <div class="muted api-body-row" style="font-size:12px;">
               Body
               <code>{\"value\": 5}</code>
-              <button class="btn small" onclick="copyAndToast('${encodeURIComponent(incBody)}', this)" aria-label="Copy POST body">Copy body</button>
+              <button class="btn small" data-copy="${encodeURIComponent(incBody)}" aria-label="Copy POST body">Copy body</button>
             </div>
           </div>
         `;
@@ -392,6 +392,13 @@
           document.addEventListener('click', outsideCloseHandler); 
           document.addEventListener('keydown', escCloseHandler);
         }, 0);
+        // Attach copy handlers without inline JS
+        menu.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('button[data-copy]');
+          if(btn){
+            copyAndToast(btn.getAttribute('data-copy'), btn);
+          }
+        });
       }
 
       function outsideCloseHandler(ev){
@@ -435,6 +442,30 @@
       }
       function confirmLogout(){
         return confirm('Are you sure you want to log out?');
+      }
+      // Attach listeners
+      const navToggle = document.querySelector('.nav-toggle');
+      if(navToggle){ navToggle.addEventListener('click', toggleNav); }
+      const userBtn = document.querySelector('.user-btn');
+      if(userBtn){ userBtn.addEventListener('click', toggleUserMenu); }
+      const logoutForm = document.querySelector('form[action="/logout"]');
+      if(logoutForm){ logoutForm.addEventListener('submit', (e) => { if(!confirmLogout()) e.preventDefault(); }); }
+      const createForm = document.getElementById('createForm');
+      if(createForm){ createForm.addEventListener('submit', handleCreate); }
+      // Delegate table button clicks
+      if(recentTableBody){
+        recentTableBody.addEventListener('click', (e) => {
+          const openBtn = e.target.closest('.open-api');
+          if(openBtn){
+            const id = openBtn.getAttribute('data-id');
+            return openApiMenu(e, id);
+          }
+          const delBtn = e.target.closest('.delete-counter');
+          if(delBtn){
+            const id = delBtn.getAttribute('data-id');
+            return deleteCounter(id);
+          }
+        });
       }
     </script>
   </body>

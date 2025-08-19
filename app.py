@@ -6,6 +6,14 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, jsonify, request, make_response, render_template, session, redirect, url_for, g
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from urllib.parse import urlparse, urljoin
+try:
+    from argon2 import PasswordHasher  # type: ignore
+except Exception:  # pragma: no cover - optional dependency during linting
+    PasswordHasher = None  # type: ignore
+import hashlib
+import time
 import re
 
 
@@ -142,29 +150,55 @@ def ensure_default_admin():
             row = cursor.fetchone()
             num_users = row['c'] if row else 0
             if num_users == 0:
-                password = os.getenv('ADMIN_PASSWORD') or secrets.token_urlsafe(16)
-                password_hash = generate_password_hash(password)
+                require_admin = os.getenv('REQUIRE_ADMIN_PASSWORD', '0') == '1'
+                provided = os.getenv('ADMIN_PASSWORD')
+                if require_admin and not provided:
+                    print("ERROR: ADMIN_PASSWORD is required on first run (REQUIRE_ADMIN_PASSWORD=1). Refusing to start without it.")
+                    raise SystemExit(1)
+                password = provided or secrets.token_urlsafe(16)
+                # Use Argon2 if available, else PBKDF2
+                try:
+                    password_hash = PasswordHasher().hash(password)
+                except Exception:
+                    password_hash = generate_password_hash(password)
                 cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', ('admin', password_hash))
                 db.commit()
                 print("Created default admin user 'admin'")
-                if not os.getenv('ADMIN_PASSWORD'):
+                if not provided:
                     print(f"Temporary admin password: {password}")
     except Exception as e:
         print(f"Error ensuring default admin: {e}")
 
 def create_app():
     app = Flask(__name__)
+
+    # Trust the upstream proxy (e.g., Nginx) for client information
+    try:
+        trusted_hops = int(os.getenv('TRUSTED_PROXY_DEPTH', '1'))
+    except Exception:
+        trusted_hops = 1
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_hops, x_proto=trusted_hops, x_host=trusted_hops, x_port=trusted_hops, x_prefix=trusted_hops)
+
     app.config.update(
         SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_bytes(32),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=bool(int(os.getenv('SESSION_COOKIE_SECURE', '0'))),
-        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_SAMESITE=os.getenv('SESSION_COOKIE_SAMESITE', 'Strict'),
         SESSION_REFRESH_EACH_REQUEST=True,
     )
     # Rolling session expiration of 2 days
     app.permanent_session_lifetime = timedelta(days=2)
     # Fake password hash to avoid username enumeration timing differences
     app.config['FAKE_PASSWORD_HASH'] = generate_password_hash('notused')
+
+    # Strong password hasher (Argon2id). Also keep a fake Argon2 hash for timing uniformity
+    password_hasher = PasswordHasher() if PasswordHasher else None
+    app.config['PASSWORD_HASHER'] = password_hasher
+    try:
+        app.config['FAKE_ARGON2_HASH'] = password_hasher.hash('notused') if password_hasher else None
+    except Exception:
+        # Fallback in the unlikely event hashing fails at startup
+        app.config['FAKE_ARGON2_HASH'] = None
     
     # Database initialization
     init_db()
@@ -199,11 +233,16 @@ def create_app():
         return wrapped
 
     def get_client_ip() -> str:
-        # Honor reverse proxy if present
-        forwarded = request.headers.get('X-Forwarded-For')
-        if forwarded:
-            return forwarded.split(',')[0].strip()
-        return request.remote_addr or 'unknown'
+        # With ProxyFix enabled, access_route[0] reflects the client IP from the trusted proxy
+        return (request.access_route[0] if request.access_route else request.remote_addr) or 'unknown'
+
+    def is_safe_url(target: str) -> bool:
+        try:
+            ref = urlparse(request.host_url)
+            test = urlparse(urljoin(request.host_url, target or ''))
+            return test.scheme in ('http', 'https') and ref.netloc == test.netloc and test.path.startswith('/')
+        except Exception:
+            return False
 
     def login_key(username: str) -> str:
         return f"{(username or '').lower()}|{get_client_ip()}"
@@ -305,6 +344,56 @@ def create_app():
         # Make logged-in sessions permanent so they honor rolling 2-day expiry
         if g.user:
             session.permanent = True
+
+        # Bind session to a lightweight user-agent fingerprint to reduce hijacking risk
+        try:
+            current_ua = (request.headers.get('User-Agent') or '').encode()
+            current_ua_hash = hashlib.sha256(current_ua).hexdigest()
+            stored_ua_hash = session.get('ua_hash')
+            if g.user and stored_ua_hash and stored_ua_hash != current_ua_hash:
+                session.clear()
+                g.user = None
+            elif g.user and not stored_ua_hash:
+                session['ua_hash'] = current_ua_hash
+        except Exception:
+            pass
+
+        # Generate a per-request CSP nonce for inline scripts
+        try:
+            g.csp_nonce = secrets.token_urlsafe(16)
+        except Exception:
+            g.csp_nonce = None
+
+    @app.after_request
+    def add_security_headers(resp):
+        # Core headers
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('X-Frame-Options', 'DENY')
+        resp.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        resp.headers.setdefault('Permissions-Policy', 'geolocation=()')
+
+        # Content Security Policy with nonce for inline scripts and allowance for jsdelivr CDN
+        nonce = getattr(g, 'csp_nonce', None)
+        script_src = ["'self'", 'https://cdn.jsdelivr.net']
+        if nonce:
+            script_src.append(f"'nonce-{nonce}'")
+        csp = (
+            "default-src 'self'; "
+            f"script-src {' '.join(script_src)}; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "font-src 'self' data:; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+        resp.headers.setdefault('Content-Security-Policy', csp)
+
+        # Enable HSTS only if explicitly requested and (ideally) TLS is used at the proxy
+        if bool(int(os.getenv('ENABLE_HSTS', '0'))):
+            resp.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+        return resp
 
     def get_csrf_from_request() -> str | None:
         header_token = request.headers.get('X-CSRF-Token')
@@ -632,23 +721,63 @@ def create_app():
         cursor = db.cursor()
         cursor.execute('SELECT password_hash FROM users WHERE username = ?', (username,))
         row = cursor.fetchone()
-        stored_hash = row['password_hash'] if row else app.config['FAKE_PASSWORD_HASH']
+        stored_hash = row['password_hash'] if row else (app.config.get('FAKE_ARGON2_HASH') or app.config['FAKE_PASSWORD_HASH'])
+
+        # Also enforce IP-only lock to reduce username spraying
+        ip_key = f"ip|{get_client_ip()}"
+        locked_user, _ = is_locked(db, key)
+        locked_ip, _ = is_locked(db, ip_key)
+        if locked_user or locked_ip:
+            return make_response(render_template('login.html', error='Invalid username or password.'), 200)
+
         ok = False
+        used_pbkdf2 = False
         try:
-            ok = check_password_hash(stored_hash, password)
+            if isinstance(stored_hash, str) and stored_hash.startswith('argon2'):
+                if app.config['PASSWORD_HASHER']:
+                    ok = app.config['PASSWORD_HASHER'].verify(stored_hash, password)
+                else:
+                    ok = False
+            else:
+                ok = check_password_hash(stored_hash, password)
+                used_pbkdf2 = True
         except Exception:
             ok = False
         if not row or not ok:
             register_failure(db, key)
+            register_failure(db, ip_key)
+            # Small backoff to slow brute-force attempts
+            try:
+                time.sleep(0.2)
+            except Exception:
+                pass
             # Always return a generic error and 200 OK to avoid signaling enumeration or lockout
             return make_response(render_template('login.html', error='Invalid username or password.'), 200)
+
+        # Successful login: migrate legacy PBKDF2 hashes to Argon2id
+        try:
+            if used_pbkdf2 and row and app.config['PASSWORD_HASHER']:
+                new_hash = app.config['PASSWORD_HASHER'].hash(password)
+                cursor.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_hash, username))
+                db.commit()
+        except Exception:
+            pass
 
         session['user_id'] = username
         session.permanent = True
         # Rotate CSRF token after login
         session['csrf_token'] = secrets.token_urlsafe(16)
+        # Bind UA fingerprint
+        try:
+            ua = (request.headers.get('User-Agent') or '').encode()
+            session['ua_hash'] = hashlib.sha256(ua).hexdigest()
+        except Exception:
+            pass
         clear_attempts(db, key)
-        next_url = request.args.get('next') or url_for('dashboard')
+        clear_attempts(db, ip_key)
+        next_url = request.args.get('next')
+        if not is_safe_url(next_url):
+            next_url = url_for('dashboard')
         return redirect(next_url)
 
     @app.route('/logout', methods=['POST'])
@@ -692,8 +821,10 @@ def create_app():
 
         try:
             pid = generate_public_id()
+            hasher = app.config.get('PASSWORD_HASHER')
+            password_hash = hasher.hash(password) if hasher else generate_password_hash(password)
             with db:
-                db.execute('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)', (username, generate_password_hash(password), pid))
+                db.execute('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)', (username, password_hash, pid))
         except sqlite3.IntegrityError:
             # Register a failure against the IP and return conflict
             register_failure(db, key)
@@ -704,6 +835,11 @@ def create_app():
         session['user_id'] = username
         session['csrf_token'] = secrets.token_urlsafe(16)
         session.permanent = True
+        try:
+            ua = (request.headers.get('User-Agent') or '').encode()
+            session['ua_hash'] = hashlib.sha256(ua).hexdigest()
+        except Exception:
+            pass
         return redirect(url_for('dashboard'))
 
     @app.route('/increase/<counter_id>', methods=['POST'])

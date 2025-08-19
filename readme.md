@@ -11,7 +11,7 @@ These instructions will get you a copy of the project up and running on your loc
 You need Python and Docker installed on your system. You can install Flask using pip:
 
 ```bash
-pip install flask
+pip install flask argon2-cffi
 ```
 
 ### Installing
@@ -34,6 +34,9 @@ docker run -d --name countify \
   -e SECRET_KEY="change-me" \
   -e ADMIN_PASSWORD="set-admin-pass" \
   -e SESSION_COOKIE_SECURE=1 \
+  -e SESSION_COOKIE_SAMESITE=Strict \
+  -e TRUSTED_PROXY_DEPTH=1 \
+  -e ENABLE_HSTS=1 \
   -v $(pwd)/data:/data \
   countify
 ```
@@ -46,6 +49,9 @@ docker run -d --name countify `
   -e SECRET_KEY="change-me" `
   -e ADMIN_PASSWORD="set-admin-pass" `
   -e SESSION_COOKIE_SECURE=1 `
+  -e SESSION_COOKIE_SAMESITE=Strict `
+  -e TRUSTED_PROXY_DEPTH=1 `
+  -e ENABLE_HSTS=1 `
   -v ${PWD}\data:/data `
   countify
 ```
@@ -53,8 +59,10 @@ docker run -d --name countify `
 Notes:
 - App listens on port 5000.
 - Data is persisted under `./data` on the host.
-- On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs.
+- On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs. For production, set `ADMIN_PASSWORD` explicitly and rotate after first login.
 - Sessions last 2 days and refresh on activity. Set a stable `SECRET_KEY` for persistence across restarts.
+ - When running behind Nginx (or another reverse proxy), `TRUSTED_PROXY_DEPTH=1` enables trusted client IP extraction for rate limiting. Ensure the proxy sets and sanitizes `X-Forwarded-For`/`X-Forwarded-Proto`.
+ - Set `SESSION_COOKIE_SECURE=1` and terminate TLS at the proxy. Enable HSTS with `ENABLE_HSTS=1` only over HTTPS.
 
 ## API Usage
 
@@ -100,6 +108,9 @@ If running locally without Docker:
 export DATABASE=./counters.db
 export SECRET_KEY=change-me
 export ADMIN_PASSWORD=set-admin-pass
+export SESSION_COOKIE_SECURE=0
+export SESSION_COOKIE_SAMESITE=Strict
+export TRUSTED_PROXY_DEPTH=0
 python app.py
 ```
 
@@ -112,8 +123,8 @@ Run the automated tests to validate the API endpoints using pytest. The tests us
 ```powershell
 cd C:\Users\admin\Documents\GitHub\api.countify.xyz
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -U pip pytest flask
+\.venv\Scripts\Activate.ps1
+pip install -U pip pytest flask argon2-cffi
 pytest -q
 ```
 
@@ -123,7 +134,7 @@ pytest -q
 cd /path/to/api.countify.xyz
 python -m venv .venv
 source .venv/bin/activate
-pip install -U pip pytest flask
+pip install -U pip pytest flask argon2-cffi
 pytest -q
 ```
 

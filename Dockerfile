@@ -11,7 +11,7 @@ WORKDIR /app
 # System deps and Python deps
 RUN apk add --no-cache sqlite-libs && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir flask gunicorn
+    pip install --no-cache-dir flask gunicorn argon2-cffi
 
 # Copy project
 COPY . /app

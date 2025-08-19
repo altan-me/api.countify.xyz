@@ -17,7 +17,7 @@
     <nav class="navbar">
       <div class="container nav-inner">
         <a class="brand" href="/">👌 countify.xyz</a>
-        <button class="nav-toggle" aria-label="Toggle navigation" onclick="toggleNav(event)">☰</button>
+        <button class="nav-toggle" aria-label="Toggle navigation">☰</button>
         <div class="nav-links" id="primaryNav">
           <a href="#features">Features</a>
           <a href="#about">About</a>
@@ -25,14 +25,14 @@
           <a href="/dashboard" class="{{ 'active' if request.path.startswith('/dashboard') else '' }}">📊 Dashboard</a>
           {% if g.user %}
           <div class="user-menu">
-            <button class="user-btn" onclick="toggleUserMenu(event)">{{ g.user.username[:1] | upper }}</button>
+            <button class="user-btn">{{ g.user.username[:1] | upper }}</button>
             <div class="user-dropdown" id="userDropdown">
               <div class="section">
                 <div><strong>👤 {{ g.user.username }}</strong></div>
                 <div class="muted">Signed in</div>
               </div>
               <div class="section">
-                <form method="post" action="/logout" onsubmit="return confirmLogout()">
+                <form method="post" action="/logout">
                   <input type="hidden" name="csrf_token" value="{{ session['csrf_token'] }}" />
                   <button type="submit" class="btn danger" style="width:100%">🚪 Log out</button>
                 </form>
@@ -163,7 +163,7 @@
         <small>Made with ❤️ from New Zealand</small>
       </div>
     </footer>
-    <script>
+    <script nonce="{{ g.csp_nonce }}">
       function toggleNav(e){
         e.preventDefault();
         const nav = document.getElementById('primaryNav');
@@ -188,6 +188,13 @@
       function confirmLogout(){
         return confirm('Are you sure you want to log out?');
       }
+      // Attach listeners
+      const navToggle = document.querySelector('.nav-toggle');
+      if(navToggle){ navToggle.addEventListener('click', toggleNav); }
+      const userBtn = document.querySelector('.user-btn');
+      if(userBtn){ userBtn.addEventListener('click', toggleUserMenu); }
+      const logoutForm = document.querySelector('form[action="/logout"]');
+      if(logoutForm){ logoutForm.addEventListener('submit', (e) => { if(!confirmLogout()) e.preventDefault(); }); }
       // Footer year
       const currentYear = new Date().getFullYear();
       const el = document.getElementById('copyright');
