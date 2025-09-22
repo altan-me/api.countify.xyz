@@ -25,8 +25,8 @@ def main() -> None:
     os.environ["DATABASE"] = os.path.join(temp_dir, "counters.test.db")
 
     try:
-        app_module = importlib.import_module("app")
-        flask_app = app_module.create_app()
+        from app import create_app
+        flask_app = create_app()
         client = flask_app.test_client()
 
         # 1) Dashboard

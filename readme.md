@@ -59,12 +59,14 @@ docker run -d --name countify `
 ### Docker Configuration Notes
 
 - App listens on port 5000
+- Uses Gunicorn WSGI server with 4 workers and threading for production deployment
 - Data is persisted under `./data` on the host
 - On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs
 - For production, set `ADMIN_PASSWORD` explicitly and change it after first login
 - Sessions last 2 days and refresh on activity - set a stable `SECRET_KEY` for persistence across restarts
 - When running behind a reverse proxy, set `TRUSTED_PROXY_DEPTH=1` for proper client IP detection
 - For HTTPS deployments, set `SESSION_COOKIE_SECURE=1` and `ENABLE_HSTS=1`
+- Includes health check endpoint for container orchestration
 
 ## API Usage
 
@@ -131,9 +133,11 @@ The application includes a web interface for user management and counter adminis
 
 ## Local Development
 
-Run locally without Docker:
+### Development Server
 
-### Windows (PowerShell)
+Run locally without Docker using Flask's development server:
+
+**Windows (PowerShell)**
 ```powershell
 $env:DATABASE = ".\counters.db"
 $env:SECRET_KEY = "change-me"
@@ -141,10 +145,10 @@ $env:ADMIN_PASSWORD = "set-admin-pass"
 $env:SESSION_COOKIE_SECURE = "0"
 $env:SESSION_COOKIE_SAMESITE = "Strict"
 $env:TRUSTED_PROXY_DEPTH = "0"
-python app.py
+python run.py
 ```
 
-### macOS/Linux
+**macOS/Linux**
 ```bash
 export DATABASE=./counters.db
 export SECRET_KEY=change-me
@@ -152,7 +156,19 @@ export ADMIN_PASSWORD=set-admin-pass
 export SESSION_COOKIE_SECURE=0
 export SESSION_COOKIE_SAMESITE=Strict
 export TRUSTED_PROXY_DEPTH=0
-python app.py
+python run.py
+```
+
+### Production Server (Local)
+
+For production-like testing with Gunicorn:
+
+```bash
+# Install gunicorn
+pip install gunicorn
+
+# Run with Gunicorn
+gunicorn -w 4 -k gthread --threads 4 -b 0.0.0.0:5000 wsgi:app
 ```
 
 ## Testing
@@ -185,6 +201,24 @@ The smoke test validates:
 - Counter increment functionality  
 - Counter increase by value functionality
 - Stats endpoint structure
+
+## Project Structure
+
+```
+├── app/                    # Main application package
+│   ├── __init__.py        # Application factory
+│   ├── models.py          # Database models and operations
+│   ├── auth.py            # Authentication routes and helpers
+│   ├── api.py             # API routes
+│   ├── main.py            # Main web interface routes
+│   └── utils.py           # Utility functions
+├── templates/             # Jinja2 templates
+├── static/               # Static files (CSS, JS, images)
+├── tests/                # Test suite
+├── debug/                # Admin tools
+├── run.py                # Application entry point
+└── readme.md             # This file
+```
 
 ## Security Features
 

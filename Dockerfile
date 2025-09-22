@@ -13,8 +13,11 @@ RUN apk add --no-cache sqlite-libs && \
     pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir flask gunicorn argon2-cffi
 
-# Copy project
-COPY . /app
+# Copy application files (structured Flask app)
+COPY app/ /app/app/
+COPY templates/ /app/templates/
+COPY static/ /app/static/
+COPY wsgi.py run.py /app/
 
 # Create data dir and non-root user
 RUN mkdir -p /data && \
@@ -35,4 +38,4 @@ HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD python -c "import urllib
 USER app
 
 # Run server (stdout logs)
-CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:5000", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:5000", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]

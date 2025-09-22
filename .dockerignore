@@ -17,3 +17,8 @@ data/
 logs/
 Dockerfile.old
 tests/
+debug/
+app_original.py
+.git/
+.gitignore
+readme.md
