@@ -25,7 +25,8 @@ RUN mkdir -p /data && \
     chown -R app:app /data /app
 
 # Runtime env
-ENV DATABASE=/data/counters.db
+ENV DATABASE=/data/counters.db \
+    PYTHONPATH=/app
 
 # Expose port
 EXPOSE 5000/tcp
