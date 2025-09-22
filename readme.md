@@ -1,6 +1,6 @@
 # Counter API
 
-The Counter API is a simple Flask application designed to track counts associated with unique IDs. It provides endpoints to get the total count, increment by one, and increase by a specified value. This document outlines the setup and usage of the Counter API.
+A secure Flask application for tracking counts associated with unique IDs. Features both public counters and user-specific counters with authentication, a web dashboard, and comprehensive security measures. Supports both API endpoints and a web interface for counter management.
 
 ## Getting Started
 
@@ -56,32 +56,33 @@ docker run -d --name countify `
   countify
 ```
 
-Notes:
-- App listens on port 5000.
-- Data is persisted under `./data` on the host.
-- On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs. For production, set `ADMIN_PASSWORD` explicitly and rotate after first login.
-- Sessions last 2 days and refresh on activity. Set a stable `SECRET_KEY` for persistence across restarts.
- - When running behind Nginx (or another reverse proxy), `TRUSTED_PROXY_DEPTH=1` enables trusted client IP extraction for rate limiting. Ensure the proxy sets and sanitizes `X-Forwarded-For`/`X-Forwarded-Proto`.
- - Set `SESSION_COOKIE_SECURE=1` and terminate TLS at the proxy. Enable HSTS with `ENABLE_HSTS=1` only over HTTPS.
+### Docker Configuration Notes
+
+- App listens on port 5000
+- Data is persisted under `./data` on the host
+- On first run, if `ADMIN_PASSWORD` is not provided, a temporary password is printed to the container logs
+- For production, set `ADMIN_PASSWORD` explicitly and change it after first login
+- Sessions last 2 days and refresh on activity - set a stable `SECRET_KEY` for persistence across restarts
+- When running behind a reverse proxy, set `TRUSTED_PROXY_DEPTH=1` for proper client IP detection
+- For HTTPS deployments, set `SESSION_COOKIE_SECURE=1` and `ENABLE_HSTS=1`
 
 ## API Usage
 
 The Counter API provides the following endpoints:
 
-### Get Total Count
+### Public Counter Endpoints
 
+#### Get Total Count
 - **Endpoint**: `GET /get-total/{id}`
 - **Description**: Retrieves the current total count for the specified ID. If the ID does not exist, it initializes it with a total of 0.
-- **Example**: [https://api.countify.xyz/get-total/testID](https://api.countify.xyz/get-total/testID)
+- **Example**: `GET /get-total/testID`
 
-### Increment Count by One
-
+#### Increment Count by One
 - **Endpoint**: `POST /increment/{id}`
 - **Description**: Increments the total count associated with the specified ID by 1. If the ID does not exist, it initializes it with a total of 1.
-- **Example**: [https://api.countify.xyz/increment/testID](https://api.countify.xyz/increment/testID)
+- **Example**: `POST /increment/testID`
 
-### Increase Count by a Specified Value
-
+#### Increase Count by a Specified Value
 - **Endpoint**: `POST /increase/{id}`
 - **Description**: Increases the total count associated with the specified ID by the value provided in the JSON payload. If the ID does not exist, it initializes it with the specified total.
 - **Payload**:
@@ -90,20 +91,60 @@ The Counter API provides the following endpoints:
     "value": 50
   }
   ```
-- **Example**: [https://api.countify.xyz/increase/testID](https://api.countify.xyz/increase/testID)
+- **Example**: `POST /increase/testID`
 
-### Stats
+### User-Specific Counter Endpoints
 
+#### Get User Counter
+- **Endpoint**: `GET /get-total/{user_hash}/{id}`
+- **Description**: Retrieves the count for a counter owned by a specific user.
+
+#### Increment User Counter
+- **Endpoint**: `POST /increment/{user_hash}/{id}`
+- **Description**: Increments a counter owned by a specific user.
+
+#### Increase User Counter
+- **Endpoint**: `POST /increase/{user_hash}/{id}`
+- **Description**: Increases a counter owned by a specific user by the specified value.
+
+### Statistics
+
+#### Global Stats
 - **Endpoint**: `GET /stats`
-- **Description**: Returns global statistics including `total_counters`, `total_count`, `last_activity`, `top_counters` and `recently_updated`.
+- **Description**: Returns statistics including `total_counters`, `total_count`, `last_activity`, `top_counters` and `recently_updated`. Shows user-specific stats when authenticated.
 
-## UI
+## Web Interface
 
-- Landing page: `/`
-- Dashboard: `/dashboard` (polls the `/stats` endpoint)
+The application includes a web interface for user management and counter administration:
 
-If running locally without Docker:
+- **Landing page**: `/` - Public homepage
+- **Login**: `/login` - User authentication
+- **Sign up**: `/signup` - User registration  
+- **Dashboard**: `/dashboard` - User dashboard with counter management (requires login)
 
+### Authentication
+
+- Default admin user is created on first run
+- If `ADMIN_PASSWORD` environment variable is not set, a temporary password is generated and printed to console
+- Users can sign up for accounts to manage their own counters
+- Sessions last 2 days with rolling expiration
+
+## Local Development
+
+Run locally without Docker:
+
+### Windows (PowerShell)
+```powershell
+$env:DATABASE = ".\counters.db"
+$env:SECRET_KEY = "change-me"
+$env:ADMIN_PASSWORD = "set-admin-pass"
+$env:SESSION_COOKIE_SECURE = "0"
+$env:SESSION_COOKIE_SAMESITE = "Strict"
+$env:TRUSTED_PROXY_DEPTH = "0"
+python app.py
+```
+
+### macOS/Linux
 ```bash
 export DATABASE=./counters.db
 export SECRET_KEY=change-me
@@ -116,7 +157,7 @@ python app.py
 
 ## Testing
 
-Run the automated tests to validate the API endpoints using pytest. The tests use Flask's test client and a temporary SQLite database, so you don't need to start the server.
+Run the automated smoke tests to validate the API endpoints. The tests use Flask's test client and a temporary SQLite database, so you don't need to start the server.
 
 ### Windows (PowerShell)
 
@@ -124,8 +165,8 @@ Run the automated tests to validate the API endpoints using pytest. The tests us
 cd C:\Users\admin\Documents\GitHub\api.countify.xyz
 python -m venv .venv
 \.venv\Scripts\Activate.ps1
-pip install -U pip pytest flask argon2-cffi
-pytest -q
+pip install -U pip flask argon2-cffi
+python tests/smoke_cli.py
 ```
 
 ### macOS/Linux
@@ -134,15 +175,48 @@ pytest -q
 cd /path/to/api.countify.xyz
 python -m venv .venv
 source .venv/bin/activate
-pip install -U pip pytest flask argon2-cffi
-pytest -q
+pip install -U pip flask argon2-cffi
+python tests/smoke_cli.py
 ```
 
-You can also run the single test file directly:
+The smoke test validates:
+- Landing page loads
+- Counter initialization to 0
+- Counter increment functionality  
+- Counter increase by value functionality
+- Stats endpoint structure
 
-```bash
-python tests/test_api.py
-```
+## Security Features
+
+- **CSRF Protection**: All forms include CSRF tokens to prevent cross-site request forgery
+- **Rate Limiting**: Login attempts are rate-limited with automatic lockouts
+- **Secure Sessions**: Sessions use secure cookies with proper SameSite policies
+- **Password Hashing**: Uses Argon2id for password hashing (falls back to PBKDF2)
+- **Content Security Policy**: Strict CSP headers to prevent XSS attacks
+- **Security Headers**: Comprehensive security headers including X-Frame-Options, X-Content-Type-Options
+
+## Admin Tools
+
+The `debug/` folder contains administrative tools:
+
+- **Reset admin password**: `python debug/reset_admin_password.py`
+
+See `debug/README.md` for detailed documentation.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE` | `counters.db` | Path to SQLite database file |
+| `SECRET_KEY` | *generated* | Flask secret key for sessions |
+| `ADMIN_PASSWORD` | *generated* | Admin user password (printed to console if not set) |
+| `SESSION_COOKIE_SECURE` | `0` | Set to `1` for HTTPS environments |
+| `SESSION_COOKIE_SAMESITE` | `Strict` | Cookie SameSite policy |
+| `TRUSTED_PROXY_DEPTH` | `1` | Number of trusted proxy hops for client IP detection |
+| `ENABLE_HSTS` | `0` | Set to `1` to enable HSTS headers (HTTPS only) |
+| `LOGIN_MAX_ATTEMPTS` | `5` | Maximum login attempts before lockout |
+| `LOGIN_WINDOW_MINUTES` | `10` | Time window for counting login attempts |
+| `LOGIN_LOCK_MINUTES` | `10` | Duration of account lockout |
 
 ## Contributing
 

@@ -161,7 +161,17 @@ def ensure_default_admin():
                     password_hash = PasswordHasher().hash(password)
                 except Exception:
                     password_hash = generate_password_hash(password)
-                cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', ('admin', password_hash))
+                
+                # Generate a unique public_id for the admin user
+                public_id = generate_public_id()
+                # Ensure uniqueness (though unlikely to collide)
+                while True:
+                    try:
+                        cursor.execute('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)', ('admin', password_hash, public_id))
+                        break
+                    except sqlite3.IntegrityError:
+                        public_id = generate_public_id()
+                
                 db.commit()
                 print("Created default admin user 'admin'")
                 if not provided:
@@ -228,7 +238,7 @@ def create_app():
         @wraps(view_func)
         def wrapped(*args, **kwargs):
             if not session.get('user_id'):
-                return redirect(url_for('login', next=request.path))
+                return redirect(f'/login?next={request.path}')
             return view_func(*args, **kwargs)
         return wrapped
 
@@ -733,7 +743,7 @@ def create_app():
         ok = False
         used_pbkdf2 = False
         try:
-            if isinstance(stored_hash, str) and stored_hash.startswith('argon2'):
+            if isinstance(stored_hash, str) and stored_hash.startswith('$argon2'):
                 if app.config['PASSWORD_HASHER']:
                     ok = app.config['PASSWORD_HASHER'].verify(stored_hash, password)
                 else:
@@ -765,8 +775,8 @@ def create_app():
 
         session['user_id'] = username
         session.permanent = True
-        # Rotate CSRF token after login
-        session['csrf_token'] = secrets.token_urlsafe(16)
+        # Don't rotate CSRF token after login to avoid logout issues
+        # The token rotation on login was causing logout forms to have stale tokens
         # Bind UA fingerprint
         try:
             ua = (request.headers.get('User-Agent') or '').encode()
@@ -776,8 +786,8 @@ def create_app():
         clear_attempts(db, key)
         clear_attempts(db, ip_key)
         next_url = request.args.get('next')
-        if not is_safe_url(next_url):
-            next_url = url_for('dashboard')
+        if not next_url or not is_safe_url(next_url):
+            next_url = '/dashboard'
         return redirect(next_url)
 
     @app.route('/logout', methods=['POST'])
@@ -786,7 +796,7 @@ def create_app():
         if not validate_csrf_token(csrf_token):
             return make_response('Bad CSRF token', 400)
         session.clear()
-        return redirect(url_for('landing'))
+        return redirect('/')
 
     @app.route('/signup', methods=['GET', 'POST'])
     def signup():
@@ -833,14 +843,14 @@ def create_app():
         # Clear failures on success and log the user in
         clear_attempts(db, key)
         session['user_id'] = username
-        session['csrf_token'] = secrets.token_urlsafe(16)
+        # Don't rotate CSRF token to avoid logout form issues
         session.permanent = True
         try:
             ua = (request.headers.get('User-Agent') or '').encode()
             session['ua_hash'] = hashlib.sha256(ua).hexdigest()
         except Exception:
             pass
-        return redirect(url_for('dashboard'))
+        return redirect('/dashboard')
 
     @app.route('/increase/<counter_id>', methods=['POST'])
     def increase_by_value(counter_id):
